@@ -8,3 +8,10 @@
 # 本地环境变量
 .env
 .env.*
+
+# python 运行时生成的缓存
+__pycache__/
+*.py[cod]
+
+# 生成的标注预览等文件
+/outputs/
