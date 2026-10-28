@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from PIL import Image
 
 CLASS_TO_ID = {
@@ -172,29 +172,39 @@ def detection_collate_fn(batch):
     return images, targets
 
 
-if __name__ == '__main__':
-    project_dir = Path(__file__).resolve().parent
-    dataset = RoadSignDataset(project_dir / "archive")
-
-    loader = DataLoader(
-        dataset,
-        batch_size=2,
-        shuffle=False,
-        num_workers=0,
-        collate_fn=detection_collate_fn,
-    )
-
-    images, targets = next(iter(loader))
-
-    # 使用独立的随机数生成器，固定数据划分的编号顺序。
+def split_dataset(dataset, seed=42):
+    """按约 8:1:1 划分数据，返回训练、验证和测试子集。"""
     split_generator = torch.Generator()
-    split_generator.manual_seed(42)
+    split_generator.manual_seed(seed)
 
     indices = torch.randperm(len(dataset), generator=split_generator).tolist()
 
-    print("编号数量：", len(indices))
-    print("编号是否完整且不重复：", sorted(indices) == list(range(len(dataset))))
-    print("前10个编号：", indices[:10])
+    num_samples = len(dataset)
+    train_size = int(num_samples * 0.8)
+    val_size = int(num_samples * 0.1)
+
+    train_indices = indices[:train_size]
+    val_indices = indices[train_size:train_size + val_size]
+    test_indices = indices[train_size + val_size:]
+
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices)
+    test_dataset = Subset(dataset, test_indices)
+
+    return train_dataset, val_dataset, test_dataset
+
+
+if __name__ == '__main__':
+    project_dir = Path(__file__).resolve().parent
+    dataset = RoadSignDataset(project_dir / "archive")
+    # 划分数据集
+    train_dataset, val_dataset, test_dataset = split_dataset(dataset)
+    #训练,验证，测试loader
+    train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=0, collate_fn=detection_collate_fn)
+    val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=0, collate_fn=detection_collate_fn)
+    test_loader = DataLoader(test_dataset, batch_size=2, shuffle=False, num_workers=0, collate_fn=detection_collate_fn)
+    print("验证集批次数量：", len(val_loader))
+    print("测试集批次数量：", len(test_loader))
 
 
 
