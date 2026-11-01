@@ -120,6 +120,10 @@ def prepare_sample(image_tensor, target, image_size=416):
     resized_image = resize_image(image_tensor, image_size)
 
     new_target = target.copy()
+    
+    # 保存缩放前、补边前的尺寸，顺序都是（高，宽）。
+    new_target["original_size"] = tuple(old_size)
+    new_target["resized_size"] = tuple(resized_image.shape[-2:])
 
     # 边框比例使用缩放后、补边前的图片尺寸。
     new_target["boxes"] = resize_boxes(
