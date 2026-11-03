@@ -15,3 +15,5 @@ __pycache__/
 
 # 生成的标注预览等文件
 /outputs/
+.venv/
+.pytest_cache/

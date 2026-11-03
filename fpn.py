@@ -1,11 +1,7 @@
 """构建 FCOS 特征金字塔，融合主干输出的多尺度特征。"""
 
-import torch
 from torch import nn
 import torch.nn.functional as F
-
-from backbone import TinyBackbone
-
 
 class FeaturePyramid(nn.Module):
     """融合主干特征，输出 P3～P7 五级特征金字塔。"""
@@ -55,22 +51,3 @@ class FeaturePyramid(nn.Module):
         p6 = self.extra6(p5)
         p7 = self.extra7(F.relu(p6))
         return p3, p4, p5, p6, p7
-
-
-if __name__ == '__main__':
-    images = torch.randn(2, 3, 416, 416)
-
-    backbone = TinyBackbone()
-    fpn = FeaturePyramid()
-
-    backbone_features = backbone(images)
-    p3, p4, p5, p6, p7 = fpn(backbone_features)
-
-    print("P3 特征形状：", p3.shape)
-    print("P4 特征形状：", p4.shape)
-    print("P5 特征形状：", p5.shape)
-    print("P6 特征形状：", p6.shape)
-    print("P7 特征形状：", p7.shape)
-
-    num_parameters = sum(p.numel() for p in fpn.parameters())
-    print("FPN 参数数量：", num_parameters)

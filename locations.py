@@ -31,23 +31,3 @@ def make_locations(cls_logits, strides):
         locations.append(points)
 
     return locations
-
-
-if __name__ == '__main__':
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    cls_logits = []
-
-    for size in (52, 26, 13, 7, 4):
-        cls_logits.append(torch.zeros(2, 4, size, size, device=device))
-
-    strides = (8, 16, 32, 64, 128)
-    locations = make_locations(cls_logits, strides)
-
-    for index, points in enumerate(locations):
-        print(f"P{index + 3} 坐标形状：", points.shape)
-        print("前两个坐标：", points[:2].tolist())
-        print("最后一个坐标：", points[-1].tolist())
-
-    total_locations = sum(points.shape[0] for points in locations)
-    print("预测位置总数：", total_locations)

@@ -1,6 +1,5 @@
 """构建 FCOS 主干网络，用于提取图像特征。"""
 
-import torch
 from torch import nn
 
 
@@ -50,18 +49,3 @@ class TinyBackbone(nn.Module):
         c5 = self.stage5(c4)
 
         return c3, c4, c5
-
-
-if __name__ == '__main__':
-    images = torch.randn(2, 3, 416, 416)
-
-    backbone = TinyBackbone()
-    c3, c4, c5 = backbone(images)
-
-    print("输入图片形状：", images.shape)
-    print("C3 特征形状：", c3.shape)
-    print("C4 特征形状：", c4.shape)
-    print("C5 特征形状：", c5.shape)
-
-    num_parameters = sum(p.numel() for p in backbone.parameters())
-    print("主干参数数量：", num_parameters)

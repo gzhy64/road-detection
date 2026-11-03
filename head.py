@@ -5,8 +5,7 @@ import math
 import torch
 from torch import nn
 
-from backbone import ConvBlock, TinyBackbone
-from fpn import FeaturePyramid
+from backbone import ConvBlock
 
 
 def make_tower(channels, num_blocks=4):
@@ -94,40 +93,3 @@ class FCOSHead(nn.Module):
             "box_distances": box_distances,
             "center_logits": center_logits
         }
-
-
-
-if __name__ == '__main__':
-    backbone = TinyBackbone()
-    fpn = FeaturePyramid()
-    head = FCOSHead(channels=256, num_classes=4)
-
-    images = torch.randn(2, 3, 416, 416)
-
-    # 本次只检查前向输出，省去保存反向传播所需的记录。
-    with torch.no_grad():
-        backbone_features = backbone(images)
-        pyramid_features = fpn(backbone_features)
-        prediction = head(pyramid_features)
-
-    for index in range(len(pyramid_features)):
-        cls = prediction["cls_logits"][index]
-        box = prediction["box_distances"][index]
-        center = prediction["center_logits"][index]
-
-        print(
-            f"P{index + 3}：",
-            cls.shape,
-            box.shape,
-            center.shape,
-        )
-
-    print("各尺度缩放系数：", head.scales.detach().tolist())
-    print(
-        "分类偏置对应的概率：",
-        head.cls_pred.bias.detach().sigmoid().tolist(),
-    )
-
-    num_parameters = sum(p.numel() for p in head.parameters())
-    print("检测头参数数量：", num_parameters)
-

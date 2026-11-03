@@ -1,0 +1,4 @@
+torch==2.7.1
+numpy>=1.24,<3
+Pillow>=10,<13
+matplotlib>=3.7,<4
