@@ -42,6 +42,26 @@ python3 evaluate.py --checkpoint outputs/checkpoints/best.pth --split val
 
 预览中预测框为红色，真实框为绿色；同名 JSON 保存完整浮点边框、类别和得分。`--annotation` 仅影响绘图，预测本身不需要标注。单图检查不能替代验证集指标。
 
+### 批量预测与绘图
+
+一次指定多张图片，标注从文件夹中按同名 XML 匹配：
+
+```bash
+python3 predict.py --checkpoint outputs/checkpoints/best.pth --image archive/images/road0.png archive/images/road1.png archive/images/road2.png --annotation-dir archive/annotations --output-dir outputs/predictions
+```
+
+也可以处理整个图片文件夹，下面先处理按文件名排序的前 10 张：
+
+```bash
+python3 predict.py --checkpoint outputs/checkpoints/best.pth --image-dir archive/images --annotation-dir archive/annotations --output-dir outputs/predictions --batch-size 2 --limit 10
+```
+
+去掉 `--limit 10` 即处理文件夹当前层的全部图片；不递归子文件夹。支持 PNG、JPEG、BMP、TIFF、WebP。文件按文件名排序，例如 `road0.png`、`road1.png`、`road10.png`。`--image` 和 `--image-dir` 二选一。
+
+每张图分别生成 `road0_pred.png`、`road0_pred.json` 等文件。批量绘图可选 `--annotation-dir` 叠加绿色真实框；不需要真实框时省略该参数。指定标注文件夹后，每张图片必须有同名 XML。多图输出使用 `--output-dir`，单图仍兼容原来的 `--annotation` 和 `--output`。
+
+程序只加载一次模型，按 `--batch-size` 分批处理，默认每批 2 张，不会一次将整个文件夹放入显存。输入图片存在同名主体、会产生同名输出时，程序会提示分目录运行或修改图片名。
+
 ### 开始训练
 
 ```bash

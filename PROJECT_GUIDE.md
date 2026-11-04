@@ -82,6 +82,8 @@ y = (row + 0.5) × stride
 
 `restore_candidates_to_original()` 按 x/y 各自的实际缩放比例还原到原图。返回 `boxes [K,4]`、`scores [K]`、`labels [K]`，K 可以为 0 或大于 1。`save_prediction_image()` 只在绘图时取整，JSON 及评估保留浮点坐标。
 
+批量预测入口先用 `collect_image_paths()` 收集显式指定的图片，或文件夹中的图片，再按 `--batch-size` 分组。`prepare_prediction_image()` 对每张图片完成相同的缩放、补边和尺寸记录，堆成图片批次后传给 `predict_batch()`。每张图独立使用自己的原图尺寸还原坐标，分别保存预览和 JSON；模型权重只加载一次。可选的 `--annotation-dir` 按图片名寻找 XML，仅用于叠加真实框。
+
 ## 如何判断检测效果
 
 `evaluate_model()` 读取指定子集图片，复用 `predict_batch()`，再直接读取 XML 的原始坐标。每张图片、每个类别调用 `match_detections_for_class()`，按预测得分从高到低匹配。
