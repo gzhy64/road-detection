@@ -6,7 +6,7 @@
 
 ## 环境和数据
 
-正式训练环境是服务器 Python 3.10、PyTorch 2.7.1+cu118、Tesla V100 16GB。继续使用服务器已有的 PyTorch 环境；`requirements.txt` 记录依赖。绘图额外需要 matplotlib，自动化检查使用 Python 标准库 unittest。
+正式训练环境是服务器 Python 3.10、PyTorch 2.7.1+cu118、Tesla V100 16GB。继续使用服务器已有的 PyTorch 环境；`requirements.txt` 记录依赖。绘图额外需要 matplotlib。
 
 将 `archive.zip` 解压为：
 
@@ -20,7 +20,7 @@ road-detection/
 └── predict.py
 ```
 
-类别编号为 `trafficlight=0, speedlimit=1, crosswalk=2, stop=3`。877 张图片按种子 2026 划分为训练 701、验证 87、测试 89 张。新检查点保存具体划分文件名及 XML 指纹；续训和评估会校验。旧检查点根据其 `split_seed` 重建划分，因此需保留相同数据集。
+类别编号为 `trafficlight=0, speedlimit=1, crosswalk=2, stop=3`。877 张图片按种子 2026 划分为训练 701、验证 87、测试 89 张。模型权重文件保存具体划分文件名及 XML 指纹，供评估时校验。已有权重按文件中的 `split_seed` 确定评估划分，因此需保留相同数据集。
 
 数据集、权重、图像和实验输出均忽略上传，仅提交代码与文档。
 
@@ -30,7 +30,6 @@ road-detection/
 
 ```bash
 git pull --ff-only origin main
-python3 -m unittest discover -s tests -v
 ```
 
 先用已有权重检查真实图片及完整验证集，命令中的路径明确指向此前的检查点：
@@ -43,37 +42,21 @@ python3 evaluate.py --checkpoint outputs/checkpoints/best.pth --split val
 
 预览中预测框为红色，真实框为绿色；同名 JSON 保存完整浮点边框、类别和得分。`--annotation` 仅影响绘图，预测本身不需要标注。单图检查不能替代验证集指标。
 
-### 从服务器现有检查点继续训练
+### 开始训练
 
 ```bash
-python3 train.py --resume outputs/checkpoints/latest.pth --epochs 50 --batch-size 4 --output-dir outputs/runs/fcos
+python3 train.py --epochs 50 --batch-size 4 --output-dir outputs/runs/fcos
 ```
 
-`--epochs 50` 表示累计训练到第 50 轮。如果检查点已经完成第 20 轮，将执行第 21～50 轮。如果它已达到 50 轮，应先评估，确需延长时将目标改为更大的轮数。
+每次运行都创建随机初始化的模型，从第 1 轮开始训练，默认共 50 轮。
 
-此命令保留旧的 `outputs/checkpoints/`，新文件写到 `outputs/runs/fcos/`。从旧格式迁移时，先对恢复的模型计算验证 mAP50，建立新的最佳模型基线。
+默认 SGD：学习率 0.001、momentum 0.9、weight decay 0.0001、梯度范数上限 10。使用 PyTorch 的 `MultiStepLR`，第 30、40 轮完成后学习率各乘 0.1；第 31 轮开始使用 0.0001，第 41 轮开始使用 0.00001。实际参数记录在 `config.json`。
 
-后续中断后，从新目录的最新权重恢复：
+每轮计算训练和验证损失，在第 1 轮、每 5 轮及最后一轮计算验证检测指标。可用 `--eval-interval 1` 每轮评估；`--patience 15` 可启用评估无改善后的早停，默认禁用。
 
-```bash
-python3 train.py --resume outputs/runs/fcos/latest.pth --epochs 50 --output-dir outputs/runs/fcos
-```
+`best.pth` 在已评估轮次中按 mAP50 选择，mAP50 相同时选择验证损失更低者；`latest.pth` 保存最新一轮模型权重。这两个文件供预测和评估使用，只保存网络参数与必要实验信息。
 
-续训恢复优化器和学习率状态；修改累计轮数不会重新开始训练。新格式在轮次边界保存随机状态与打乱顺序。旧检查点缺少这些状态，可以继续优化，但不能精确重现当时的随机顺序。跨设备、PyTorch 版本或工作进程数改变时，也不保证逐位一致。
-
-### 新建独立实验
-
-```bash
-python3 train.py --epochs 50 --batch-size 4 --output-dir outputs/runs/fcos_new
-```
-
-新实验默认 SGD：学习率 0.001、momentum 0.9、weight decay 0.0001、梯度范数上限 10。第 30、40 轮完成后，学习率各乘 0.1；第 31 轮开始使用 0.0001，第 41 轮开始使用 0.00001。
-
-旧检查点续训保留原优化器参数，例如之前的 momentum 为 0，不会自动变成 0.9；缺少学习率计划时，按累计轮次启用上述计划。所有实际参数记录在 `config.json`。续训会恢复原学习率计划，调整优化器超参数请新建独立实验。
-
-默认每轮计算训练/验证损失，在第 1 轮、每 5 轮及最后一轮计算验证检测指标。可用 `--eval-interval 1` 每轮评估；`--patience 15` 可启用评估无改善后的早停，默认禁用。`best.pth` 在已评估轮次中按 mAP50 选择，mAP50 相同时选择验证损失更低者。`latest.pth` 用于续训。
-
-新目录已有 `latest.pth` 时，程序要求显式续训或换目录，避免无意覆盖另一组实验。
+输出目录已有训练结果时，请通过 `--output-dir` 指定新的目录，例如 `outputs/runs/fcos_new`。
 
 ## 评估和曲线
 
@@ -113,8 +96,6 @@ python3 evaluate.py --checkpoint outputs/runs/fcos/best.pth --split test
 | P6 | 64 | — | `[B,256,7,7]` | 4 / 4 / 1 |
 | P7 | 128 | — | `[B,256,4,4]` | 4 / 4 / 1 |
 
-五级共有 3614 个参考点，总参数量 12,642,222。函数之间的数据流、坐标和标签约定见 [PROJECT_GUIDE.md](PROJECT_GUIDE.md)。人工检查案例放入 `tests/`；训练、预测、评估入口直接操作真实数据。
-
-已完成的检查与第 5 轮旧权重的验证集基线见 [VALIDATION.md](VALIDATION.md)。
+五级共有 3614 个参考点，总参数量 12,642,222。函数之间的数据流、坐标和标签约定见 [PROJECT_GUIDE.md](PROJECT_GUIDE.md)。训练、预测、评估入口直接操作真实数据。
 
 参考：[FCOS 原论文](https://arxiv.org/abs/1904.01355)、[FCOS 作者实现](https://github.com/tianzhi0549/FCOS)、[VOC AP 积分代码](https://github.com/weiliu89/VOCdevkit/blob/master/VOCcode/VOCap.m)。

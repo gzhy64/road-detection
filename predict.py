@@ -102,10 +102,6 @@ def save_prediction_image(image_path, result, class_to_id, save_path, target=Non
     return save_path
 
 
-
-
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, default=default_checkpoint())

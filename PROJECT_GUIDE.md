@@ -92,12 +92,10 @@ y = (row + 0.5) × stride
 
 P/R 使用固定得分阈值，AP 使用低阈值候选的排序，两个指标回答的问题不同。验证指标用于训练和参数选择，测试集只用于最终报告。
 
-## 训练状态与实验记录
+## 模型权重与实验记录
 
-`experiment.prepare_splits()` 固定数据成员并计算 XML 指纹；`load_checkpoint()` 检查类别映射，`load_model()` 加载网络，`save_json()` 保存结果。
+`experiment.prepare_splits()` 固定数据成员并计算 XML 指纹；`load_checkpoint()` 检查权重文件中的类别映射，`load_model()` 加载网络供预测和评估，`save_json()` 保存结果。
 
-`EpochLRScheduler` 根据已完成轮数设置下一轮学习率。`save_checkpoint()` 在轮末保存模型、优化器、学习率计划、历史、划分、随机状态和训练数据打乱生成器。`restore_random_state()` 恢复新格式的随机状态。恢复代码从下一轮继续，不重复已完成轮次。
+训练入口每次创建新的模型和优化器，从第 1 轮开始训练。`MultiStepLR` 在设定的轮次结束后调整下一轮的学习率。`save_model()` 保存模型参数、类别定义、当前轮次、训练配置和数据划分，供预测和评估使用。
 
-训练入口每轮记录损失，在配置的轮次评估检测指标。`latest.pth` 保存最新状态；`best.pth` 保存评估过的模型中 mAP50 最高者，同分时比较验证损失。`write_history()` 保存 JSON 和 CSV；`plot_history.py` 读取记录绘图，无需重新训练。
-
-`tests/` 保存可手算的边界案例和小规模端到端检查。它们检查代码规则；模型是否能在真实路标数据上泛化，需要查看实际验证和测试指标。
+训练入口每轮记录损失，在配置的轮次评估检测指标。`latest.pth` 保存最新一轮模型权重；`best.pth` 保存评估过的模型中 mAP50 最高者，同分时比较验证损失。`write_history()` 保存 JSON 和 CSV；`plot_history.py` 读取记录绘图。

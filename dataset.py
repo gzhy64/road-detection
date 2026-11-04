@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader, Subset
+from torch.utils.data import Dataset, Subset
 from PIL import Image
 
 CLASS_TO_ID = {
@@ -196,19 +196,3 @@ def split_dataset(dataset, seed=42):
     test_dataset = Subset(dataset, test_indices)
 
     return train_dataset, val_dataset, test_dataset
-
-
-if __name__ == '__main__':
-    project_dir = Path(__file__).resolve().parent
-    dataset = RoadSignDataset(project_dir / "archive")
-    # 划分数据集
-    train_dataset, val_dataset, test_dataset = split_dataset(dataset)
-    #训练,验证，测试loader
-    train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, num_workers=0, collate_fn=detection_collate_fn)
-    val_loader = DataLoader(val_dataset, batch_size=2, shuffle=False, num_workers=0, collate_fn=detection_collate_fn)
-    test_loader = DataLoader(test_dataset, batch_size=2, shuffle=False, num_workers=0, collate_fn=detection_collate_fn)
-    print("验证集批次数量：", len(val_loader))
-    print("测试集批次数量：", len(test_loader))
-
-
-
