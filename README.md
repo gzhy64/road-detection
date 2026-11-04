@@ -43,7 +43,17 @@ road-detection/
 python3 train.py --epochs 50 --batch-size 4 --seed 2026 --output-dir outputs/runs/fcos
 ```
 
-每次运行都会创建随机初始化的模型，从第 1 轮开始训练。默认 SGD：学习率 0.001、momentum 0.9、weight decay 0.0001、梯度范数上限 10。`MultiStepLR` 在第 30、40 轮完成后将学习率各乘 0.1；第 31 轮开始使用 0.0001，第 41 轮开始使用 0.00001。
+每次运行都会创建随机初始化的模型，从第 1 轮开始训练。默认 SGD：初始学习率 0.001、momentum 0.9、weight decay 0.0001、梯度范数上限 10。
+
+学习率只使用 `CosineAnnealingLR` 余弦退火，每轮结束后平滑下调下一轮的学习率，无周期重启。`--lr` 设置初始值，`--min-lr` 设置最低值（默认 `1e-6`），须满足 `0 < min_lr <= lr`。训练至少两轮且正常完成时，第 1 轮使用初始值，最后一轮使用最低值；只训练一轮时使用初始值，提前停止时可能尚未降到最低值。原来的 `--milestones`、`--gamma` 已删除。
+
+例如，进行 100 轮余弦退火实验：
+
+```bash
+python3 train.py --epochs 100 --batch-size 4 --seed 2026 --lr 0.001 --min-lr 1e-6 --output-dir outputs/runs/fcos100_cosine
+```
+
+该命令的模型权重、评估和绘图路径应使用 `outputs/runs/fcos100_cosine/`。初始值、最低值及调度方式会写入 `config.json` 和模型权重中的 `run_config`；`history.json/csv` 中的 `lr` 是每轮实际用于参数更新的值。是否优于既有实验，以相同数据划分下的验证集指标判断。
 
 训练过程中，每轮计算训练和验证损失，在第 1 轮、每 5 轮及最后一轮计算验证集检测指标，用来选择最佳权重。可用 `--eval-interval 1` 每轮评估；`--patience 15` 可启用评估无改善后的早停，默认禁用。测试集不参与这一过程。
 

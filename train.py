@@ -2,13 +2,14 @@
 
 import argparse
 import csv
+import math
 import random
 import time
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader, Subset
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from dataset import CLASS_TO_ID, RoadSignDataset, detection_collate_fn
 from evaluate import evaluate_model, print_metrics
@@ -116,11 +117,10 @@ def main():
     parser.add_argument("--epochs", type=int, default=50, help="本次从头训练的轮数")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--seed", type=int)
-    parser.add_argument("--lr", type=float)
+    parser.add_argument("--lr", type=float, help="初始学习率，默认 0.001")
+    parser.add_argument("--min-lr", type=float, help="余弦退火的最低学习率，默认 0.000001")
     parser.add_argument("--momentum", type=float)
     parser.add_argument("--weight-decay", type=float)
-    parser.add_argument("--milestones", type=int, nargs="+")
-    parser.add_argument("--gamma", type=float)
     parser.add_argument("--max-grad-norm", type=float)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--num-workers", type=int, default=0)
@@ -129,15 +129,16 @@ def main():
     args = parser.parse_args()
     if args.epochs < 1 or args.eval_interval < 1 or args.num_workers < 0 or args.patience < 0:
         parser.error("轮数和评估间隔须为正数，工作进程和早停轮数不能为负数。")
-    config = dict(seed=2026, batch_size=4, lr=1e-3, momentum=0.9,
-                  weight_decay=1e-4, milestones=[30, 40], gamma=0.1, max_grad_norm=10.0)
-    for key in ("seed", "batch_size", "lr", "momentum", "weight_decay", "milestones", "gamma", "max_grad_norm"):
+    config = dict(seed=2026, batch_size=4, lr=1e-3, min_lr=1e-6, momentum=0.9,
+                  weight_decay=1e-4, max_grad_norm=10.0)
+    for key in ("seed", "batch_size", "lr", "min_lr", "momentum", "weight_decay", "max_grad_norm"):
         if getattr(args, key) is not None:
             config[key] = getattr(args, key)
-    if (config["batch_size"] < 1 or config["lr"] <= 0 or not 0 <= config["momentum"] < 1
-            or config["weight_decay"] < 0 or not 0 < config["gamma"] <= 1
-            or any(value < 1 for value in config["milestones"])):
+    if (config["batch_size"] < 1 or not math.isfinite(config["lr"]) or config["lr"] <= 0
+            or not 0 <= config["momentum"] < 1 or config["weight_decay"] < 0):
         parser.error("批次大小、学习率或优化器参数不合法。")
+    if not 0 < config["min_lr"] <= config["lr"]:
+        parser.error("最低学习率须为有限正数，且不能大于初始学习率。")
     latest_path = args.output_dir / "latest.pth"
     if any((args.output_dir / name).exists() for name in ("latest.pth", "best.pth", "config.json")):
         parser.error("输出目录已有训练结果，请通过 --output-dir 指定新的实验目录。")
@@ -161,9 +162,13 @@ def main():
     model = FCOS(num_classes=len(CLASS_TO_ID)).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=config["lr"],
                                 momentum=config["momentum"], weight_decay=config["weight_decay"])
-    scheduler = MultiStepLR(optimizer, milestones=config["milestones"], gamma=config["gamma"])
+    # 每轮结束后更新下一轮：N 轮之间共调整 N-1 次，最后一轮使用最低学习率。
+    scheduler = CosineAnnealingLR(
+        optimizer, T_max=max(args.epochs - 1, 1), eta_min=config["min_lr"],
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    config.update(epochs=args.epochs, eval_interval=args.eval_interval, patience=args.patience,
+    config.update(scheduler="cosine", epochs=args.epochs,
+                  eval_interval=args.eval_interval, patience=args.patience,
                   device=str(device), num_workers=args.num_workers, data_dir=str(args.data_dir))
     save_json(config, args.output_dir / "config.json")
     save_json(dataset_metadata, args.output_dir / "split.json")
@@ -174,6 +179,7 @@ def main():
     best_path = args.output_dir / "best.pth"
     print(f"训练设备：{device} | 样本：{len(indices['train'])} | 批次：{len(train_loader)}", flush=True)
     print(f"从第 1 轮开始训练，共 {args.epochs} 轮，输出目录：{args.output_dir}", flush=True)
+    print(f"余弦退火学习率：{config['lr']:.6g} → {config['min_lr']:.6g}", flush=True)
 
     def persist(path, epoch, train_losses, val_losses):
         save_model(model, epoch, train_losses, val_losses, path,
@@ -204,8 +210,9 @@ def main():
             print_metrics(metrics)
         row["seconds"] = time.perf_counter() - started
         history.append(row)
-        # 本轮参数更新完成后，调整下一轮的学习率。
-        scheduler.step()
+        # 最后一轮结束后不再调度，避免越过余弦下降区间后学习率回升。
+        if epoch < args.epochs:
+            scheduler.step()
         persist(latest_path, epoch, train_losses, val_losses)
         if improved:
             persist(best_path, epoch, train_losses, val_losses)
