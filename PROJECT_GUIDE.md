@@ -98,8 +98,10 @@ P/R 使用固定得分阈值，AP 使用低阈值候选的排序，两个指标�
 
 `experiment.prepare_splits()` 固定数据成员并计算 XML 指纹；`load_checkpoint()` 检查权重文件中的类别映射，`load_model()` 加载网络供预测和评估，`save_json()` 保存结果。
 
-训练入口每次创建新的模型和优化器，从第 1 轮开始训练。学习率只使用 `CosineAnnealingLR` 余弦退火：`--lr` 是初始值，`--min-lr` 是最低值，默认分别为 `1e-3` 和 `1e-6`。N 轮训练之间共调整 N-1 次，因此 `T_max=max(N-1,1)`；每轮参数更新完成后调整下一轮，最后一轮结束后不再调度，无周期重启。正常完成且 N≥2 时，最后一轮实际使用最低值；N=1 时只用初始值，提前停止可能尚未降到最低值。
+训练入口每次创建新的模型和优化器，从第 1 轮开始训练。学习率只使用 `CosineAnnealingLR` 余弦退火：`--lr` 是初始值，`--min-lr` 是最低值，默认分别为 `1e-3` 和 `1e-6`。`--epochs` 是总训练轮数 N，`--decay-epochs` 是下降轮数 D，省略时 D=N。N≥2 时须满足 2≤D≤N；前 D 轮之间共调整 D-1 次，因此 `T_max=max(D-1,1)`。
 
-`history.json/csv` 中的 `lr` 记录该轮实际使用的学习率。`save_model()` 保存模型参数、类别定义、当前轮次、训练配置和数据划分，供预测和评估使用；训练配置记录 `scheduler="cosine"`、`lr`、`min_lr`。
+每轮参数更新完成后，仅在 `epoch < decay_epochs` 时调用 `scheduler.step()`。第 D 轮使用最低学习率，此后停止调度并保持该值，无周期重启。例如 N=100、D=50 时，第 50～100 轮均使用最低值。N=1 时 D=1，只用初始值；提前停止可能尚未降到最低值。
+
+`history.json/csv` 中的 `lr` 记录该轮实际使用的学习率。`save_model()` 保存模型参数、类别定义、当前轮次、训练配置和数据划分，供预测和评估使用；训练配置记录 `scheduler="cosine"`、`lr`、`min_lr`、`decay_epochs`。
 
 训练入口每轮记录损失，在配置的轮次评估检测指标。`latest.pth` 保存最新一轮模型权重；`best.pth` 保存评估过的模型中 mAP50 最高者，同分时比较验证损失。`write_history()` 保存 JSON 和 CSV；`plot_history.py` 读取记录绘图。

@@ -115,6 +115,7 @@ def main():
     parser.add_argument("--data-dir", type=Path, default=PROJECT_DIR / "archive")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_RUN_DIR)
     parser.add_argument("--epochs", type=int, default=50, help="本次从头训练的轮数")
+    parser.add_argument("--decay-epochs", type=int, help="第几轮降到最低学习率，默认等于总训练轮数")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--lr", type=float, help="初始学习率，默认 0.001")
@@ -129,6 +130,9 @@ def main():
     args = parser.parse_args()
     if args.epochs < 1 or args.eval_interval < 1 or args.num_workers < 0 or args.patience < 0:
         parser.error("轮数和评估间隔须为正数，工作进程和早停轮数不能为负数。")
+    decay_epochs = args.epochs if args.decay_epochs is None else args.decay_epochs
+    if not 1 <= decay_epochs <= args.epochs or (args.epochs > 1 and decay_epochs < 2):
+        parser.error("余弦下降轮数须在 2 到总训练轮数之间；只训练一轮时须为 1。")
     config = dict(seed=2026, batch_size=4, lr=1e-3, min_lr=1e-6, momentum=0.9,
                   weight_decay=1e-4, max_grad_norm=10.0)
     for key in ("seed", "batch_size", "lr", "min_lr", "momentum", "weight_decay", "max_grad_norm"):
@@ -162,12 +166,12 @@ def main():
     model = FCOS(num_classes=len(CLASS_TO_ID)).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=config["lr"],
                                 momentum=config["momentum"], weight_decay=config["weight_decay"])
-    # 每轮结束后更新下一轮：N 轮之间共调整 N-1 次，最后一轮使用最低学习率。
+    # 前 D 轮之间调整 D-1 次，第 D 轮开始使用并保持最低学习率。
     scheduler = CosineAnnealingLR(
-        optimizer, T_max=max(args.epochs - 1, 1), eta_min=config["min_lr"],
+        optimizer, T_max=max(decay_epochs - 1, 1), eta_min=config["min_lr"],
     )
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    config.update(scheduler="cosine", epochs=args.epochs,
+    config.update(scheduler="cosine", epochs=args.epochs, decay_epochs=decay_epochs,
                   eval_interval=args.eval_interval, patience=args.patience,
                   device=str(device), num_workers=args.num_workers, data_dir=str(args.data_dir))
     save_json(config, args.output_dir / "config.json")
@@ -179,7 +183,11 @@ def main():
     best_path = args.output_dir / "best.pth"
     print(f"训练设备：{device} | 样本：{len(indices['train'])} | 批次：{len(train_loader)}", flush=True)
     print(f"从第 1 轮开始训练，共 {args.epochs} 轮，输出目录：{args.output_dir}", flush=True)
-    print(f"余弦退火学习率：{config['lr']:.6g} → {config['min_lr']:.6g}", flush=True)
+    if args.epochs == 1:
+        print(f"单轮训练使用初始学习率：{config['lr']:.6g}", flush=True)
+    else:
+        print(f"余弦退火学习率：第 1 轮 {config['lr']:.6g} → 第 {decay_epochs} 轮 "
+              f"{config['min_lr']:.6g}，此后保持最低值", flush=True)
 
     def persist(path, epoch, train_losses, val_losses):
         save_model(model, epoch, train_losses, val_losses, path,
@@ -210,8 +218,8 @@ def main():
             print_metrics(metrics)
         row["seconds"] = time.perf_counter() - started
         history.append(row)
-        # 最后一轮结束后不再调度，避免越过余弦下降区间后学习率回升。
-        if epoch < args.epochs:
+        # 降到最低值后停止调度，后续训练保持该值，避免余弦曲线回升。
+        if epoch < decay_epochs:
             scheduler.step()
         persist(latest_path, epoch, train_losses, val_losses)
         if improved:
