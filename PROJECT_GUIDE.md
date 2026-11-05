@@ -4,7 +4,7 @@
 
 `dataset.py` 中，`RoadSignDataset.__getitem__()` 根据编号寻找同名图片和 XML。它调用 `read_image()` 得到 CPU 上的 `float32 [3,H,W]`、像素范围 `[0,1]`，调用 `read_annotation()` 得到 `boxes: float32 [N,4]` 和 `labels: int64 [N]`。
 
-两者交给 `prepare_sample()`：
+默认两者直接交给 `prepare_sample()`。训练开启 `--augment` 时，先调用 `augmentations.TrainAugmentation`，在原图坐标系下同步处理图片和边框，再交给 `prepare_sample()`：
 
 1. `resize_image()` 将长边缩放到 416，并对实际高宽取整。
 2. `resize_boxes()` 使用实际缩放前后的高宽，分别缩放 x/y 坐标。
@@ -12,6 +12,16 @@
 4. 保留 `(H,W)` 顺序的 `original_size` 和补边前的 `resized_size`。
 
 `detection_collate_fn()` 将多张图片堆为 `[B,3,416,416]`，标注仍是长度 B 的字典列表，因为不同图片的目标数不同。DataLoader 负责选择哪些样本属于一个批次，collate 函数负责如何将这些样本整理在一起。
+
+## 训练增强如何传递数据
+
+`TrainAugmentation.__call__()` 接收原图 `float32 [3,H,W]` 和 `boxes [N,4]`、`labels [N]`。`_photometric()` 以 50% 概率调整亮度和对比度，因子均为 0.8～1.2，像素限制在 `[0,1]`，边框不变。
+
+`_geometric()` 独立以 50% 概率执行中心缩放和平移：先采样 0.9～1.1 倍的缩放，再计算允许的平移区间，使全部标注框完整落在画面内，位移幅度最多为宽、高的 5%。图片使用 `affine_grid()` 和 `grid_sample()` 按逆映射采样，边框按同一变换正向更新；两者都采用连续像素坐标。超出原图的背景填零，不丢弃目标或类别；最多尝试 10 次，不可行时跳过几何变换。
+
+增强后的画布高宽不变，再由 `prepare_sample()` 统一缩放边框并补边。`train.py` 用相同编号从独立的增强数据集读取训练样本；验证加载器和 `evaluate_model()` 始终使用没有变换的基础数据集实例。`RoadSignDataset(data_dir)` 默认 `transform=None`，原有预测和评估入口保持固定预处理。
+
+随机数使用 PyTorch RNG，沿用训练种子和 DataLoader 工作进程种子。`to_config()` 返回具体增强范围，训练入口将其写入实验配置及模型权重。
 
 ## 网络如何生成预测
 

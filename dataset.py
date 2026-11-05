@@ -1,6 +1,4 @@
-"""
-读取路标图片和标注，并转换为训练使用的张量
-"""
+"""读取路标图片和标注，应用可选样本变换并转换为模型输入张量。"""
 
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -139,8 +137,9 @@ def prepare_sample(image_tensor, target, image_size=416):
 
 class RoadSignDataset(Dataset):
     """按编号读取并预处理图片及目标标注。"""
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, transform=None):
         self.data_dir = Path(data_dir)
+        self.transform = transform
         self.image_dir = self.data_dir / "images"
         self.annotation_dir = self.data_dir / "annotations"
         # 固定样本顺序，后续通过编号找到对应的标注。
@@ -157,6 +156,9 @@ class RoadSignDataset(Dataset):
         image_tensor = read_image(image_path)
         target = read_annotation(annotation_path)
 
+        # 变换在原图坐标下同步处理图片和标注，随后统一缩放、补边。
+        if self.transform is not None:
+            image_tensor, target = self.transform(image_tensor, target)
         image_tensor, target = prepare_sample(image_tensor, target)
 
         return image_tensor, target

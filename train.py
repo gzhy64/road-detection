@@ -10,6 +10,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader, Subset
 
+from augmentations import TrainAugmentation
 from dataset import CLASS_TO_ID, RoadSignDataset, detection_collate_fn
 from evaluate import evaluate_model, print_metrics
 from experiment import DEFAULT_RUN_DIR, PROJECT_DIR, prepare_splits, save_json, select_device
@@ -116,6 +117,7 @@ def main():
     parser.add_argument("--epochs", type=int, default=50, help="本次从头训练的轮数")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--augment", action="store_true", help="仅对训练集启用轻微光照、缩放和平移增强")
     parser.add_argument("--lr", type=float, help="初始学习率，默认 0.001")
     parser.add_argument("--min-lr", type=float, help="学习率下限，默认 0.000001，不要求训练结束时达到")
     parser.add_argument("--lr-decay", type=float, help="每轮学习率的乘数，默认 0.95，须大于 0 且小于 1")
@@ -151,9 +153,12 @@ def main():
     indices, dataset_metadata = prepare_splits(dataset, config["seed"])
     if not indices["train"] or not indices["val"]:
         parser.error("训练集和验证集不能为空。")
+    augmentation = TrainAugmentation() if args.augment else None
+    # 增强使用独立的数据集实例，验证损失和检测评估始终读取基础实例。
+    train_dataset = RoadSignDataset(args.data_dir, transform=augmentation) if augmentation else dataset
     train_generator = torch.Generator().manual_seed(config["seed"])
     train_loader = DataLoader(
-        Subset(dataset, indices["train"]), batch_size=config["batch_size"], shuffle=True,
+        Subset(train_dataset, indices["train"]), batch_size=config["batch_size"], shuffle=True,
         num_workers=args.num_workers, collate_fn=detection_collate_fn, generator=train_generator,
     )
     val_loader = DataLoader(
@@ -168,6 +173,7 @@ def main():
     config.update(scheduler="exponential", epochs=args.epochs,
                   eval_interval=args.eval_interval, patience=args.patience,
                   device=str(device), num_workers=args.num_workers, data_dir=str(args.data_dir))
+    config["augmentation"] = augmentation.to_config() if augmentation else {"enabled": False}
     save_json(config, args.output_dir / "config.json")
     save_json(dataset_metadata, args.output_dir / "split.json")
     history = []
@@ -179,6 +185,7 @@ def main():
     print(f"从第 1 轮开始训练，共 {args.epochs} 轮，输出目录：{args.output_dir}", flush=True)
     print(f"学习率：初始值 {config['lr']:.6g}，每轮乘 {config['lr_decay']:.6g}，"
           f"下限 {config['min_lr']:.6g}", flush=True)
+    print(f"训练增强：{'开启' if args.augment else '关闭'}", flush=True)
 
     def persist(path, epoch, train_losses, val_losses):
         save_model(model, epoch, train_losses, val_losses, path,
