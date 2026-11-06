@@ -114,8 +114,10 @@ python3 predict.py --checkpoint outputs/runs/fcos100-n-aug/best.pth --image arch
 一次绘制多张验证集图片：
 
 ```bash
-python3 predict.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001_aug/best.pth --image archive/images/road261.png archive/images/road141.png archive/images/road415.png --annotation-dir archive/annotations --batch-size 2
+python3 predict.py --checkpoint outputs/runs/fcos_e100_b4_lr0.001_aug/best.pth --image archive/images/road32.png archive/images/road121.png archive/images/road144.png archive/images/road68.png --annotation-dir archive/annotations --batch-size 2
 ```
+
+这四张验证集图片依次对应红绿灯、限速标志、人行横道标志和停止标志，每张均只有一个标注目标。
 
 默认将预览和 JSON 保存到 `--checkpoint` 所在目录。带标注时按输入图片名生成 `图片名_compare.png` 和 `图片名_compare.json`；只画预测时生成 `图片名_pred.png` 和 `图片名_pred.json`。例如单图命令会保存到 `outputs/runs/fcos100-n-aug/road261_compare.png` 及同名 JSON。
 
