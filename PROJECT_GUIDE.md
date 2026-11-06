@@ -74,7 +74,9 @@ y = (row + 0.5) × stride
 - `iou_loss()`：预测 ltrb 与真实 ltrb 使用同一个参考点，计算 `-log(IoU)`；以真实中心度加权，并除以权重和。
 - `centerness_loss()`：正样本上的 BCEWithLogits，按正样本数量归一化。
 
-没有正样本时，回归和中心度损失为可反向传播的 0；分类仍能学习背景。`train_one_batch()` 负责清梯度、前向、构造目标、损失、反向、梯度检查及裁剪、优化器更新。
+没有正样本时，回归和中心度损失为可反向传播的 0；分类仍能学习背景。
+
+`train.compute_batch_losses()` 统一完成前向预测、参考点生成、目标分配和损失计算，并检查总损失是否有限。`train_one_batch()` 调用它后进行反向传播、梯度检查与裁剪和参数更新；`validate_one_epoch()` 在关闭梯度的环境中复用它，只累计损失。训练与验证共用计算流程，由各自的入口设置模型模式和梯度状态。
 
 ## 如何得到最终检测框
 
@@ -85,6 +87,8 @@ y = (row + 0.5) × stride
              → clip_candidates_to_image → 候选数量限制
              → nms_by_class → restore_candidates_to_original
 ```
+
+得分阈值、NMS 阈值及候选数量上限在 `predict_batch()` 中统一检查，逐图后处理不再重复检查。预测和评估共用这一入口。
 
 `decode_boxes()` 根据参考点 `(x,y)` 生成 `[x-l,y-t,x+r,y+b]`。`filter_candidates()` 用 `sqrt(sigmoid(cls) × sigmoid(center))` 排序、筛选；一个点可以有多个类别过阈值，因此可能返回相同坐标、不同类别的候选。
 

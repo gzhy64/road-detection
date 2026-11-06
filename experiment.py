@@ -14,13 +14,11 @@ RUNS_DIR = PROJECT_DIR / "outputs" / "runs"
 DEFAULT_RUN_DIR = RUNS_DIR / "fcos"
 
 
-def create_run_directory(epochs, batch_size, lr, augment=False, runs_dir=None):
+def create_run_directory(epochs, batch_size, lr, runs_dir=None):
     """按关键参数创建实验目录，重名时增加序号，保留已有目录中的结果。"""
     root = Path(runs_dir) if runs_dir is not None else RUNS_DIR
     root.mkdir(parents=True, exist_ok=True)
-    name = f"fcos_e{epochs}_b{batch_size}_lr{lr:g}"
-    if augment:
-        name += "_aug"
+    name = f"fcos_e{epochs}_b{batch_size}_lr{lr:g}_aug"
     number = 1
     while True:
         directory = root / (name if number == 1 else f"{name}_{number}")

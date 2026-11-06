@@ -119,8 +119,7 @@ def build_targets_per_level(locations, target, regression_range, num_classes=4):
 
     positive_mask = matched_indices >= 0
 
-    point_indices = torch.arange(num_locations, device=locations.device)
-    positive_indices = point_indices[positive_mask]
+    positive_indices = positive_mask.nonzero().flatten()
     gt_indices = matched_indices[positive_mask]
 
     # 只为匹配成功的参考点填入真实类别和距离。
@@ -148,27 +147,15 @@ def build_targets(locations, targets, num_classes=4):
     if len(locations) != len(REGRESSION_RANGES):
         raise ValueError("参考点尺度数量必须与回归范围数量一致。")
 
-    batch_targets = {
-        "labels": [],
-        "box_distances": [],
-        "centerness": []
-    }
+    batch_targets = {name: [] for name in ("labels", "box_distances", "centerness")}
 
     # 外层按尺度处理，内层按图片处理。
     for level_locations, regression_range in zip(locations, REGRESSION_RANGES):
-        level_labels = []
-        level_reg = []
-        level_center = []
-
-        for target in targets:
-            assigned = build_targets_per_level(level_locations, target, regression_range, num_classes=num_classes)
-
-            level_labels.append(assigned["labels"])
-            level_reg.append(assigned["box_distances"])
-            level_center.append(assigned["centerness"])
-
-        batch_targets["labels"].append(torch.stack(level_labels, dim=0))
-        batch_targets["box_distances"].append(torch.stack(level_reg, dim=0))
-        batch_targets["centerness"].append(torch.stack(level_center, dim=0))
+        assigned = [
+            build_targets_per_level(level_locations, target, regression_range, num_classes)
+            for target in targets
+        ]
+        for name in batch_targets:
+            batch_targets[name].append(torch.stack([item[name] for item in assigned]))
 
     return batch_targets

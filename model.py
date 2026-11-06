@@ -25,6 +25,4 @@ class FCOS(nn.Module):
     def forward(self, images):
         backbone_features = self.backbone(images)
         pyramid_features = self.fpn(backbone_features)
-        predictions = self.head(pyramid_features)
-
-        return predictions
+        return self.head(pyramid_features)

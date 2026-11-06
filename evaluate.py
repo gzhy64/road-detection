@@ -107,7 +107,7 @@ def summarize_class(matches, score_threshold=0.3):
 @torch.no_grad()
 def evaluate_model(
     model, dataset, indices, device, batch_size=2, num_workers=0,
-    score_threshold=0.05, report_threshold=0.3, iou_threshold=0.5,
+    score_threshold=0.05, report_threshold=0.3,
     nms_iou_threshold=DEFAULT_NMS_IOU_THRESHOLD, max_candidates=1000, max_detections=100,
     verbose=False,
 ):
@@ -116,8 +116,6 @@ def evaluate_model(
         raise ValueError("评估子集为空。")
     if not 0 <= score_threshold <= report_threshold <= 1:
         raise ValueError("阈值必须满足 0 <= 候选得分阈值 <= P/R 得分阈值 <= 1。")
-    if iou_threshold != 0.5:
-        raise ValueError("当前实现报告 AP50，匹配 IoU 阈值固定为 0.5。")
     loader = DataLoader(
         Subset(dataset, indices), batch_size=batch_size, shuffle=False,
         num_workers=num_workers, collate_fn=detection_collate_fn,

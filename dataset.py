@@ -25,40 +25,21 @@ def read_annotation(annotation_path):
     labels = []
 
     for obj in root.iter("object"):
-        class_name = obj.findtext("name")
-        class_id = CLASS_TO_ID[class_name]
-        labels.append(class_id)
-
+        labels.append(CLASS_TO_ID[obj.findtext("name")])
         box = obj.find("bndbox")
-        coordinates = [
-            float(box.findtext("xmin")),
-            float(box.findtext("ymin")),
-            float(box.findtext("xmax")),
-            float(box.findtext("ymax")),
-        ]
-        boxes.append(coordinates)
-
-    boxes = torch.tensor(boxes, dtype=torch.float32, device="cpu")
-    boxes = boxes.reshape(-1, 4)
-    labels = torch.tensor(labels, dtype=torch.int64, device="cpu")
+        boxes.append([float(box.findtext(key)) for key in ("xmin", "ymin", "xmax", "ymax")])
 
     return {
-        "boxes": boxes,
-        "labels": labels,
+        "boxes": torch.tensor(boxes, dtype=torch.float32).reshape(-1, 4),
+        "labels": torch.tensor(labels, dtype=torch.int64),
     }
 
 
 def read_image(image_path):
     """读取图片，返回像素范围为 [0, 1] 的 [C, H, W] 浮点张量。"""
     with Image.open(image_path) as image:
-        image_rgb = image.convert("RGB")
-
-    image_array = np.array(image_rgb)
-    image_tensor = torch.from_numpy(image_array)
-    image_tensor = image_tensor.permute(2, 0, 1)
-    image_tensor = image_tensor.float() / 255.0
-
-    return image_tensor
+        image_array = np.array(image.convert("RGB"))
+    return torch.from_numpy(image_array).permute(2, 0, 1).float() / 255.0
 
 
 def resize_image(image_tensor, image_size=416):
@@ -89,11 +70,7 @@ def resize_boxes(boxes, old_size, new_size):
     scale_x = new_width / old_width
     scale_y = new_height / old_height
 
-    scales = torch.tensor(
-        [scale_x, scale_y, scale_x, scale_y],
-        dtype=boxes.dtype,
-        device=boxes.device,
-    )
+    scales = boxes.new_tensor([scale_x, scale_y, scale_x, scale_y])
 
     return boxes * scales
 
@@ -118,7 +95,7 @@ def prepare_sample(image_tensor, target, image_size=416):
     resized_image = resize_image(image_tensor, image_size)
 
     new_target = target.copy()
-    
+
     # 保存缩放前、补边前的尺寸，顺序都是（高，宽）。
     new_target["original_size"] = tuple(old_size)
     new_target["resized_size"] = tuple(resized_image.shape[-2:])
@@ -159,30 +136,18 @@ class RoadSignDataset(Dataset):
         # 变换在原图坐标下同步处理图片和标注，随后统一缩放、补边。
         if self.transform is not None:
             image_tensor, target = self.transform(image_tensor, target)
-        image_tensor, target = prepare_sample(image_tensor, target)
-
-        return image_tensor, target
+        return prepare_sample(image_tensor, target)
 
 
 def detection_collate_fn(batch):
     """将检测样本整理为图片批次张量和标注列表。"""
-    images = []
-    targets = []
-
-    for image_tensor, target in batch:
-        images.append(image_tensor)
-        targets.append(target)
-
-    images = torch.stack(images, dim=0)
-
-    return images, targets
+    images, targets = zip(*batch)
+    return torch.stack(images), list(targets)
 
 
 def split_dataset(dataset, seed=42):
     """按约 8:1:1 划分数据，返回训练、验证和测试子集。"""
-    split_generator = torch.Generator()
-    split_generator.manual_seed(seed)
-
+    split_generator = torch.Generator().manual_seed(seed)
     indices = torch.randperm(len(dataset), generator=split_generator).tolist()
 
     num_samples = len(dataset)

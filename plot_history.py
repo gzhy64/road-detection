@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from dataset import CLASS_TO_ID
 from experiment import DEFAULT_RUN_DIR
 
 
@@ -27,7 +28,7 @@ def plot_history(history_path, output_path=None):
     for key, label in (("map50", "mAP50"), ("precision", "Precision"), ("recall", "Recall")):
         axes[1].plot(evaluated_epochs, [row[key] for row in evaluated], marker=".", label=label)
     axes[1].set(title="Validation detection metrics", ylabel="Score", ylim=(0, 1))
-    for name in ("trafficlight", "speedlimit", "crosswalk", "stop"):
+    for name in CLASS_TO_ID:
         rows = [row for row in evaluated if row.get(f"ap50_{name}") is not None]
         axes[2].plot([row["epoch"] for row in rows], [row[f"ap50_{name}"] for row in rows],
                      marker=".", label=name)

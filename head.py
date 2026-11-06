@@ -10,12 +10,7 @@ from backbone import ConvBlock
 
 def make_tower(channels, num_blocks=4):
     """构建保持通道数和空间尺寸不变的卷积序列。"""
-    layers = []
-
-    for _ in range(num_blocks):
-        layers.append(ConvBlock(channels, channels, stride=1))
-
-    return nn.Sequential(*layers)
+    return nn.Sequential(*(ConvBlock(channels, channels) for _ in range(num_blocks)))
 
 
 class FCOSHead(nn.Module):
@@ -52,13 +47,11 @@ class FCOSHead(nn.Module):
             if isinstance(module, nn.Conv2d):
                 nn.init.normal_(module.weight, mean=0.0, std=0.01)
 
-                if module.bias is not None:
-                    nn.init.zeros_(module.bias)
+                nn.init.zeros_(module.bias)
 
         # 使分类偏置经过 sigmoid 后对应给定的先验概率。
         bias_value = math.log(prior_prob / (1.0 - prior_prob))
         nn.init.constant_(self.cls_pred.bias, bias_value)
-
 
     def forward_single(self, feature, level_index):
         cls_features = self.cls_tower(feature)
@@ -70,7 +63,7 @@ class FCOSHead(nn.Module):
         box_logits = self.box_pred(reg_features)
         box_distances = torch.exp(self.scales[level_index] * box_logits)
 
-        # 按之前论文结构图的连接方式，从分类特征预测中心度。
+        # 中心度分支与分类分支共用特征。
         center_logits = self.center_pred(cls_features)
 
         return cls_logits, box_distances, center_logits

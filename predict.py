@@ -6,7 +6,7 @@ from pathlib import Path
 import torch
 from PIL import Image, ImageDraw
 
-from dataset import CLASS_TO_ID, prepare_sample, read_annotation, read_image
+from dataset import CLASS_TO_ID, detection_collate_fn, prepare_sample, read_annotation, read_image
 from experiment import PROJECT_DIR, default_checkpoint, load_model, save_json, select_device
 from locations import make_locations
 from losses import flatten_predictions
@@ -21,6 +21,11 @@ def predict_batch(
     iou_threshold=DEFAULT_NMS_IOU_THRESHOLD, max_candidates=1000, max_detections=100,
 ):
     """预测一个已预处理的批次，逐张返回原图坐标下的检测结果。"""
+    # 批次入口统一检查参数，逐图后处理不再重复检查。
+    if not 0 <= score_threshold <= 1 or not 0 <= iou_threshold <= 1:
+        raise ValueError("得分阈值和 NMS IoU 阈值必须在 [0,1] 内。")
+    if max_candidates < 1 or max_detections < 1:
+        raise ValueError("候选框上限和检测框上限必须为正数。")
     model.eval()
     predictions = model(images.to(device))
     flat = flatten_predictions(predictions)
@@ -69,20 +74,14 @@ def save_prediction_image(image_path, result, class_to_id, save_path, target=Non
         image = source.convert("RGB")
 
     draw = ImageDraw.Draw(image)
+    id_to_class = {class_id: name for name, class_id in class_to_id.items()}
 
     # 可选的绿色真实框仅用于检查，预测本身不读取标注。
     if target is not None:
         for box, label in zip(target["boxes"].tolist(), target["labels"].tolist()):
             coordinates = [round(value) for value in box]
             draw.rectangle(coordinates, outline="lime", width=3)
-            name = next(name for name, value in class_to_id.items() if value == label)
-            draw.text((coordinates[0], coordinates[3]), f"GT {name}", fill="lime")
-
-    # 将“类别名称 -> 编号”转换为“编号 -> 类别名称”。
-    id_to_class = {
-        class_id: name
-        for name, class_id in class_to_id.items()
-    }
+            draw.text((coordinates[0], coordinates[3]), f"GT {id_to_class[label]}", fill="lime")
 
     # 转为 CPU 上的普通列表，供 Pillow 绘图使用。
     boxes = result["boxes"].detach().cpu().tolist()
@@ -112,8 +111,6 @@ def save_prediction_image(image_path, result, class_to_id, save_path, target=Non
 def collect_image_paths(images=None, image_dir=None, limit=None):
     """收集图片并保持固定顺序，文件夹模式只读取当前层的图片文件。"""
     if image_dir is not None:
-        if not image_dir.is_dir():
-            raise ValueError(f"图片文件夹不存在：{image_dir}")
         suffixes = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
         paths = sorted(path for path in image_dir.iterdir()
                        if path.is_file() and path.suffix.lower() in suffixes)
@@ -154,28 +151,19 @@ def main():
     args = parser.parse_args()
     if args.batch_size < 1:
         parser.error("--batch-size 必须为正数。")
-    if not 0 <= args.score_threshold <= 1 or not 0 <= args.nms_iou_threshold <= 1:
-        parser.error("得分阈值和 NMS IoU 阈值必须在 [0,1] 内。")
-    if args.max_detections < 1:
-        parser.error("--max-detections 必须为正数。")
-    try:
-        image_paths = collect_image_paths(args.image, args.image_dir, args.limit)
-    except ValueError as error:
-        parser.error(str(error))
+    image_paths = collect_image_paths(args.image, args.image_dir, args.limit)
     if len(image_paths) > 1 and (args.output or args.annotation):
         parser.error("多图模式请省略 --output；标注使用 --annotation-dir，需要另存时用 --output-dir。")
-    if args.annotation_dir and not args.annotation_dir.is_dir():
-        parser.error(f"标注文件夹不存在：{args.annotation_dir}")
 
     output_dir = args.output_dir or args.checkpoint.parent
     annotation_paths = [
         args.annotation_dir / f"{image.stem}.xml" if args.annotation_dir else args.annotation
         for image in image_paths
     ]
-    output_paths = []
-    for image, annotation in zip(image_paths, annotation_paths):
-        suffix = "compare" if annotation is not None else "pred"
-        output_paths.append(args.output or output_dir / f"{image.stem}_{suffix}.png")
+    output_paths = [
+        args.output or output_dir / f"{image.stem}_{'compare' if annotation is not None else 'pred'}.png"
+        for image, annotation in zip(image_paths, annotation_paths)
+    ]
     if len({path.resolve() for path in output_paths}) != len(output_paths):
         parser.error("输入图片存在同名文件，会覆盖输出，请分目录运行或修改图片名。")
     for output in output_paths:
@@ -192,15 +180,12 @@ def main():
     # 只加载一次模型，图片按小批次处理，避免将整个文件夹一次放入显存。
     for start in range(0, len(image_paths), args.batch_size):
         batch_paths = image_paths[start:start + args.batch_size]
-        samples = [prepare_prediction_image(path) for path in batch_paths]
-        images = torch.stack([image for image, _ in samples])
-        targets = [target for _, target in samples]
+        images, targets = detection_collate_fn([prepare_prediction_image(path) for path in batch_paths])
         results = predict_batch(
             model, images, targets, device, args.score_threshold,
             args.nms_iou_threshold, max_detections=args.max_detections,
         )
-        for offset, (image_path, result) in enumerate(zip(batch_paths, results)):
-            index = start + offset
+        for index, (image_path, result) in enumerate(zip(batch_paths, results), start=start):
             annotation = annotation_paths[index]
             target = read_annotation(annotation) if annotation is not None else None
             output = output_paths[index]

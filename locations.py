@@ -11,9 +11,7 @@ def make_locations_per_level(height, width, stride, device):
 
     grid_y, grid_x = torch.meshgrid(shifts_y, shifts_x, indexing='ij')
 
-    locations = torch.stack([grid_x.reshape(-1), grid_y.reshape(-1)], dim=1)
-
-    return locations
+    return torch.stack([grid_x.reshape(-1), grid_y.reshape(-1)], dim=1)
 
 
 def make_locations(cls_logits, strides):
@@ -21,13 +19,7 @@ def make_locations(cls_logits, strides):
     if len(cls_logits) != len(strides):
         raise ValueError("预测层数量必须与步长数量一致。")
 
-    locations = []
-
-    for logits, stride in zip(cls_logits, strides):
-        height, width = logits.shape[-2:]
-
-        points = make_locations_per_level(height, width, stride, logits.device)
-
-        locations.append(points)
-
-    return locations
+    return [
+        make_locations_per_level(*logits.shape[-2:], stride, logits.device)
+        for logits, stride in zip(cls_logits, strides)
+    ]

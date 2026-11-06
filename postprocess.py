@@ -12,15 +12,9 @@ CROSS_CLASS_NMS_IOU_THRESHOLD = 0.8
 
 def decode_boxes(locations, box_distances):
     """将单张图片的参考点 [N,2] 和 ltrb 距离 [N,4] 转为 xyxy 框。"""
-    xs = locations[:, 0]
-    ys = locations[:, 1]
-
-    xmin = xs - box_distances[:, 0]
-    ymin = ys - box_distances[:, 1]
-    xmax = xs + box_distances[:, 2]
-    ymax = ys + box_distances[:, 3]
-
-    return torch.stack([xmin, ymin, xmax, ymax], dim=-1)
+    left_top = locations - box_distances[:, :2]
+    right_bottom = locations + box_distances[:, 2:]
+    return torch.cat([left_top, right_bottom], dim=-1)
 
 
 def filter_candidates(boxes, cls_logits, center_logits, score_threshold=0.3):
@@ -32,9 +26,7 @@ def filter_candidates(boxes, cls_logits, center_logits, score_threshold=0.3):
     scores = torch.sqrt(cls_probs * center_probs)
 
     # 每行记录一个过阈值的“参考点编号、类别编号”。
-    candidate_indices = (scores >= score_threshold).nonzero()
-    point_indices = candidate_indices[:, 0]
-    labels = candidate_indices[:, 1]
+    point_indices, labels = torch.where(scores >= score_threshold)
 
     return {
         "boxes": boxes[point_indices],
@@ -133,22 +125,15 @@ def clip_candidates_to_image(candidates, image_size):
     # 裁剪后，宽和高都必须大于 0。
     valid_mask = ((boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1]))
 
-    return {
-        "boxes": boxes[valid_mask],
-        "scores": candidates["scores"][valid_mask],
-        "labels": candidates["labels"][valid_mask],
-    }
+    clipped = dict(candidates, boxes=boxes)
+    return {name: values[valid_mask] for name, values in clipped.items()}
 
 
 def restore_candidates_to_original(candidates, resized_size, original_size):
     """将检测框从缩放后坐标还原到原图坐标。"""
     boxes = resize_boxes(candidates["boxes"], old_size=resized_size, new_size=original_size)
 
-    return {
-        "boxes": boxes,
-        "scores": candidates["scores"],
-        "labels": candidates["labels"],
-    }
+    return dict(candidates, boxes=boxes)
 
 
 def postprocess_single_image(
@@ -164,10 +149,6 @@ def postprocess_single_image(
         max_detections=100,
 ):
     """将单张图片按位置排列的预测转换为原图检测结果。"""
-    if not 0 <= score_threshold <= 1 or not 0 <= iou_threshold <= 1:
-        raise ValueError("得分阈值和 NMS IoU 阈值必须在 [0,1] 内。")
-    if max_candidates < 1 or max_detections < 1:
-        raise ValueError("候选框上限和检测框上限必须为正数。")
     valid_mask = get_valid_location_mask(locations, resized_size)
     valid_mask &= torch.isfinite(box_distances).all(dim=1)
     valid_mask &= torch.isfinite(center_logits)
@@ -191,11 +172,7 @@ def postprocess_single_image(
         max_detections=max_detections,
     )
 
-    selected = {
-        "boxes": candidates["boxes"][keep_indices],
-        "scores": candidates["scores"][keep_indices],
-        "labels": candidates["labels"][keep_indices],
-    }
+    selected = {name: values[keep_indices] for name, values in candidates.items()}
 
     return restore_candidates_to_original(
         selected, resized_size=resized_size, original_size=original_size

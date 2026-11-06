@@ -26,16 +26,22 @@ def move_targets(targets, device):
             for target in targets]
 
 
-def train_one_batch(model, images, targets, optimizer, device, max_grad_norm=10.0):
-    """完成一个批次的损失计算和参数更新，并检查损失与梯度。"""
-    model.train()
-    optimizer.zero_grad(set_to_none=True)
+def compute_batch_losses(model, images, targets, device):
+    """供训练和验证共用，完成前向预测、目标分配与损失计算。"""
     predictions = model(images.to(device))
     locations = make_locations(predictions["cls_logits"], model.strides)
     batch_targets = build_targets(locations, move_targets(targets, device), model.num_classes)
     losses = compute_losses(predictions, batch_targets)
-    if not all(torch.isfinite(value).item() for value in losses.values()):
-        raise RuntimeError("训练损失出现 NaN 或 Inf，未执行本批次参数更新。")
+    if not torch.isfinite(losses["loss_total"]).item():
+        raise RuntimeError("总损失出现 NaN 或 Inf，请检查数据和模型输出。")
+    return losses
+
+
+def train_one_batch(model, images, targets, optimizer, device, max_grad_norm=10.0):
+    """完成一个批次的损失计算和参数更新，并检查损失与梯度。"""
+    model.train()
+    optimizer.zero_grad(set_to_none=True)
+    losses = compute_batch_losses(model, images, targets, device)
     losses["loss_total"].backward()
     # 即使关闭裁剪，也检查梯度，避免将无效梯度写入权重。
     torch.nn.utils.clip_grad_norm_(
@@ -48,8 +54,6 @@ def train_one_batch(model, images, targets, optimizer, device, max_grad_norm=10.
 
 def train_one_epoch(model, train_loader, optimizer, device, max_grad_norm=10.0):
     """遍历训练集，返回四项损失的批次平均值。"""
-    if len(train_loader) == 0:
-        raise ValueError("训练数据加载器为空。")
     sums = dict.fromkeys(("loss_cls", "loss_box", "loss_center", "loss_total"), 0.0)
     for images, targets in train_loader:
         values = train_one_batch(model, images, targets, optimizer, device, max_grad_norm)
@@ -61,17 +65,10 @@ def train_one_epoch(model, train_loader, optimizer, device, max_grad_norm=10.0):
 @torch.no_grad()
 def validate_one_epoch(model, val_loader, device):
     """计算验证损失；检测效果另外用 AP50、精确率和召回率衡量。"""
-    if len(val_loader) == 0:
-        raise ValueError("验证数据加载器为空。")
     model.eval()
     sums = dict.fromkeys(("loss_cls", "loss_box", "loss_center", "loss_total"), 0.0)
     for images, targets in val_loader:
-        predictions = model(images.to(device))
-        locations = make_locations(predictions["cls_logits"], model.strides)
-        batch_targets = build_targets(locations, move_targets(targets, device), model.num_classes)
-        losses = compute_losses(predictions, batch_targets)
-        if not all(torch.isfinite(value).item() for value in losses.values()):
-            raise RuntimeError("验证损失出现 NaN 或 Inf。")
+        losses = compute_batch_losses(model, images, targets, device)
         for name, value in losses.items():
             sums[name] += value.item()
     return {name: value / len(val_loader) for name, value in sums.items()}
@@ -115,14 +112,14 @@ def main():
     parser.add_argument("--data-dir", type=Path, default=PROJECT_DIR / "archive")
     parser.add_argument("--output-dir", type=Path, help="自定义保存目录，默认按轮数、批次和初始学习率自动命名")
     parser.add_argument("--epochs", type=int, default=50, help="本次从头训练的轮数")
-    parser.add_argument("--batch-size", type=int)
-    parser.add_argument("--seed", type=int)
-    parser.add_argument("--lr", type=float, help="初始学习率，默认 0.001")
-    parser.add_argument("--min-lr", type=float, help="学习率下限，默认 0.000001，不要求训练结束时达到")
-    parser.add_argument("--lr-decay", type=float, help="每轮学习率的乘数，默认 0.95，须大于 0 且小于 1")
-    parser.add_argument("--momentum", type=float)
-    parser.add_argument("--weight-decay", type=float)
-    parser.add_argument("--max-grad-norm", type=float)
+    parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--lr", type=float, default=1e-3, help="初始学习率，默认 0.001")
+    parser.add_argument("--min-lr", type=float, default=1e-6, help="学习率下限，默认 0.000001，不要求训练结束时达到")
+    parser.add_argument("--lr-decay", type=float, default=0.95, help="每轮学习率的乘数，默认 0.95，须大于 0 且小于 1")
+    parser.add_argument("--momentum", type=float, default=0.9)
+    parser.add_argument("--weight-decay", type=float, default=1e-4)
+    parser.add_argument("--max-grad-norm", type=float, default=10.0)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--eval-interval", type=int, default=5)
@@ -130,11 +127,9 @@ def main():
     args = parser.parse_args()
     if args.epochs < 1 or args.eval_interval < 1 or args.num_workers < 0 or args.patience < 0:
         parser.error("轮数和评估间隔须为正数，工作进程和早停轮数不能为负数。")
-    config = dict(seed=2026, batch_size=4, lr=1e-3, min_lr=1e-6, lr_decay=0.95, momentum=0.9,
-                  weight_decay=1e-4, max_grad_norm=10.0)
-    for key in ("seed", "batch_size", "lr", "min_lr", "lr_decay", "momentum", "weight_decay", "max_grad_norm"):
-        if getattr(args, key) is not None:
-            config[key] = getattr(args, key)
+    config = {key: getattr(args, key) for key in (
+        "seed", "batch_size", "lr", "min_lr", "lr_decay", "momentum", "weight_decay", "max_grad_norm",
+    )}
     if (config["batch_size"] < 1 or not math.isfinite(config["lr"]) or config["lr"] <= 0
             or not 0 <= config["momentum"] < 1 or config["weight_decay"] < 0):
         parser.error("批次大小、学习率或优化器参数不合法。")
@@ -170,9 +165,7 @@ def main():
     optimizer = torch.optim.SGD(model.parameters(), lr=config["lr"],
                                 momentum=config["momentum"], weight_decay=config["weight_decay"])
     if args.output_dir is None:
-        args.output_dir = create_run_directory(
-            args.epochs, config["batch_size"], config["lr"], augment=True,
-        )
+        args.output_dir = create_run_directory(args.epochs, config["batch_size"], config["lr"])
     else:
         args.output_dir.mkdir(parents=True, exist_ok=True)
     latest_path = args.output_dir / "latest.pth"
