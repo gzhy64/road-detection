@@ -4,7 +4,7 @@
 
 `dataset.py` 中，`RoadSignDataset.__getitem__()` 根据编号寻找同名图片和 XML。它调用 `read_image()` 得到 CPU 上的 `float32 [3,H,W]`、像素范围 `[0,1]`，调用 `read_annotation()` 得到 `boxes: float32 [N,4]` 和 `labels: int64 [N]`。
 
-默认两者直接交给 `prepare_sample()`。训练开启 `--augment` 时，先调用 `augmentations.TrainAugmentation`，在原图坐标系下同步处理图片和边框，再交给 `prepare_sample()`：
+训练样本默认先调用 `augmentations.TrainAugmentation`，在原图坐标系下同步处理图片和边框，再交给 `prepare_sample()`；验证、测试和预测直接使用固定的 `prepare_sample()` 流程：
 
 1. `resize_image()` 将长边缩放到 416，并对实际高宽取整。
 2. `resize_boxes()` 使用实际缩放前后的高宽，分别缩放 x/y 坐标。
@@ -110,7 +110,7 @@ P/R 使用固定得分阈值，AP 使用低阈值候选的排序，两个指标�
 
 `experiment.prepare_splits()` 固定数据成员并计算 XML 指纹；`load_checkpoint()` 检查权重文件中的类别映射，`load_model()` 加载网络供预测和评估，`save_json()` 保存结果。
 
-训练未指定 `--output-dir` 时，`create_run_directory()` 根据轮数、批次和初始学习率创建目录，如 `outputs/runs/fcos_e50_b4_lr0.001/`；启用增强时追加 `_aug`。同名目录已存在时追加 `_2`、`_3`，通过实际创建目录占用名字，避免重复或并发运行共用输出目录。完整配置和实际 `output_dir` 写入 `config.json`。显式指定 `--output-dir` 时沿用用户路径，并检查其中是否已有训练结果。
+训练未指定 `--output-dir` 时，`create_run_directory()` 根据轮数、批次和初始学习率创建目录。训练增强默认启用，因此目录始终带 `_aug`，例如 `outputs/runs/fcos_e50_b4_lr0.001_aug/`。同名目录已存在时追加 `_2`、`_3`，通过实际创建目录占用名字，避免重复或并发运行共用输出目录。完整配置和实际 `output_dir` 写入 `config.json`。显式指定 `--output-dir` 时沿用用户路径，并检查其中是否已有训练结果。
 
 评估未指定 `--output` 时，在 `--checkpoint` 所在目录保存 `val_metrics.json` 或 `test_metrics.json`；单图检查保存 `single_图片名_metrics.json`。显式 `--output` 可覆盖该默认保存位置。
 
