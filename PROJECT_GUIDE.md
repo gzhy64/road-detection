@@ -88,7 +88,9 @@ y = (row + 0.5) × stride
 
 `decode_boxes()` 根据参考点 `(x,y)` 生成 `[x-l,y-t,x+r,y+b]`。`filter_candidates()` 用 `sqrt(sigmoid(cls) × sigmoid(center))` 排序、筛选；一个点可以有多个类别过阈值，因此可能返回相同坐标、不同类别的候选。
 
-`clip_candidates_to_image()` 裁剪到补边前的有效区域，并删除零面积框。`nms_by_class()` 分类别调用 `nms_single_class()`，删除与已保留高分框 IoU 过大的低分框。不同类别之间不删除，同类别但 IoU 较低的局部框也可能保留。
+`clip_candidates_to_image()` 裁剪到补边前的有效区域，并删除零面积框。`nms_by_class()` 先分类别调用 `nms_single_class()`，在默认 IoU 阈值 0.4 下删除重复低分框；再将各类别结果按得分排序，对不同类别且 IoU > 0.8 的高度重叠候选保留高分项。类内阈值由 `DEFAULT_NMS_IOU_THRESHOLD` 提供，跨类别阈值由 `CROSS_CLASS_NMS_IOU_THRESHOLD` 提供，均位于 `postprocess.py`。两个阶段完成后才限制检测数量，不会因重复候选提前占满名额。
+
+这是根据预测框、类别和置信度进行的去重，不读取真实标注决定保留数量。不同位置的目标仍可同时检出。预测和评估入口共用这些规则，输出 JSON 记录类内及跨类别阈值，AP50 的真实框匹配阈值仍为 0.5。
 
 `restore_candidates_to_original()` 按 x/y 各自的实际缩放比例还原到原图。返回 `boxes [K,4]`、`scores [K]`、`labels [K]`，K 可以为 0 或大于 1。`save_prediction_image()` 只在绘图时取整，JSON 及评估保留浮点坐标。
 

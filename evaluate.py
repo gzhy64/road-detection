@@ -8,7 +8,9 @@ from torch.utils.data import DataLoader, Subset
 
 from dataset import CLASS_TO_ID, RoadSignDataset, detection_collate_fn, read_annotation
 from experiment import PROJECT_DIR, default_checkpoint, load_model, prepare_splits, save_json, select_device
-from postprocess import box_iou_one_to_many
+from postprocess import (
+    CROSS_CLASS_NMS_IOU_THRESHOLD, DEFAULT_NMS_IOU_THRESHOLD, box_iou_one_to_many,
+)
 from predict import predict_batch
 
 
@@ -106,7 +108,7 @@ def summarize_class(matches, score_threshold=0.3):
 def evaluate_model(
     model, dataset, indices, device, batch_size=2, num_workers=0,
     score_threshold=0.05, report_threshold=0.3, iou_threshold=0.5,
-    nms_iou_threshold=0.5, max_candidates=1000, max_detections=100,
+    nms_iou_threshold=DEFAULT_NMS_IOU_THRESHOLD, max_candidates=1000, max_detections=100,
     verbose=False,
 ):
     """评估指定样本，预测框和 XML 真实框都使用原图坐标。"""
@@ -162,6 +164,8 @@ def evaluate_model(
             "score_threshold": score_threshold,
             "report_threshold": report_threshold,
             "nms_iou_threshold": nms_iou_threshold,
+            "cross_class_nms_iou_threshold": CROSS_CLASS_NMS_IOU_THRESHOLD,
+            "nms": "per-class NMS, followed by high-overlap suppression across different classes",
             "max_candidates": max_candidates,
             "max_detections": max_detections,
             "classes_without_gt": "AP is null and excluded from mAP",
@@ -195,7 +199,7 @@ def main():
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--score-threshold", type=float, default=0.05)
     parser.add_argument("--report-threshold", type=float, default=0.3)
-    parser.add_argument("--nms-iou-threshold", type=float, default=0.5)
+    parser.add_argument("--nms-iou-threshold", type=float, default=DEFAULT_NMS_IOU_THRESHOLD)
     parser.add_argument("--output", type=Path, help="另存路径，默认在权重目录保存 val_metrics.json 或 test_metrics.json")
     args = parser.parse_args()
     device = select_device(args.device)

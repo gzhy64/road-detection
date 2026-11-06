@@ -10,13 +10,15 @@ from dataset import CLASS_TO_ID, prepare_sample, read_annotation, read_image
 from experiment import PROJECT_DIR, default_checkpoint, load_model, save_json, select_device
 from locations import make_locations
 from losses import flatten_predictions
-from postprocess import postprocess_single_image
+from postprocess import (
+    CROSS_CLASS_NMS_IOU_THRESHOLD, DEFAULT_NMS_IOU_THRESHOLD, postprocess_single_image,
+)
 
 
 @torch.no_grad()
 def predict_batch(
     model, images, targets, device, score_threshold=0.3,
-    iou_threshold=0.5, max_candidates=1000, max_detections=100,
+    iou_threshold=DEFAULT_NMS_IOU_THRESHOLD, max_candidates=1000, max_detections=100,
 ):
     """预测一个已预处理的批次，逐张返回原图坐标下的检测结果。"""
     model.eval()
@@ -51,7 +53,7 @@ def prepare_prediction_image(image_path):
 
 def predict_one_image(
     model, image_path, device, score_threshold=0.3,
-    iou_threshold=0.5, max_candidates=1000, max_detections=100,
+    iou_threshold=DEFAULT_NMS_IOU_THRESHOLD, max_candidates=1000, max_detections=100,
 ):
     """读取单张图片并预测；不需要 XML 标注。"""
     image, target = prepare_prediction_image(image_path)
@@ -147,7 +149,7 @@ def main():
     parser.add_argument("--limit", type=int, help="最多处理前 N 张图片，不指定则处理全部")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--score-threshold", type=float, default=0.3)
-    parser.add_argument("--nms-iou-threshold", type=float, default=0.5)
+    parser.add_argument("--nms-iou-threshold", type=float, default=DEFAULT_NMS_IOU_THRESHOLD)
     parser.add_argument("--max-detections", type=int, default=100)
     args = parser.parse_args()
     if args.batch_size < 1:
@@ -207,6 +209,7 @@ def main():
                 "image": str(image_path), "checkpoint": str(args.checkpoint),
                 "epoch": checkpoint["epoch"], "class_to_id": CLASS_TO_ID,
                 "score_threshold": args.score_threshold, "nms_iou_threshold": args.nms_iou_threshold,
+                "cross_class_nms_iou_threshold": CROSS_CLASS_NMS_IOU_THRESHOLD,
                 **{name: values.detach().cpu().tolist() for name, values in result.items()},
             }, output.with_suffix(".json"))
             print(f"[{index + 1}/{len(image_paths)}] {image_path.name} | "

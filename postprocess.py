@@ -6,6 +6,10 @@ from dataset import resize_boxes
 from targets import get_valid_location_mask
 
 
+DEFAULT_NMS_IOU_THRESHOLD = 0.4
+CROSS_CLASS_NMS_IOU_THRESHOLD = 0.8
+
+
 def decode_boxes(locations, box_distances):
     """将单张图片的参考点 [N,2] 和 ltrb 距离 [N,4] 转为 xyxy 框。"""
     xs = locations[:, 0]
@@ -60,8 +64,8 @@ def box_iou_one_to_many(box, boxes, eps=1e-6):
     return intersection / union.clamp_min(eps)
 
 
-def nms_single_class(boxes, scores, iou_threshold=0.5):
-    """对同一类别的框执行 NMS，返回保留框相对于输入的行号。"""
+def nms_single_class(boxes, scores, iou_threshold=DEFAULT_NMS_IOU_THRESHOLD):
+    """对一组框执行 NMS，返回保留框相对于输入的行号。"""
     if boxes.shape[0] == 0:
         return torch.empty(0, dtype=torch.int64, device=boxes.device)
 
@@ -82,8 +86,8 @@ def nms_single_class(boxes, scores, iou_threshold=0.5):
     return torch.stack(keep)
 
 
-def nms_by_class(boxes, scores, labels, iou_threshold=0.5, max_detections=100):
-    """按类别执行 NMS，返回按得分排序后的输入行号。"""
+def nms_by_class(boxes, scores, labels, iou_threshold=DEFAULT_NMS_IOU_THRESHOLD, max_detections=100):
+    """先按类别执行 NMS，再去除跨类别的高度重叠框，返回原始行号。"""
     if boxes.shape[0] == 0:
         return torch.empty(0, dtype=torch.int64, device=boxes.device)
 
@@ -100,11 +104,21 @@ def nms_by_class(boxes, scores, labels, iou_threshold=0.5, max_detections=100):
 
     keep = torch.cat(kept_indices)
 
-    # 合并各类别后，统一按得分排序并限制总数量。
+    # 同一对象可能被预测成不同类别，优先保留高度重叠候选中的高分项。
     order = scores[keep].argsort(descending=True)
-    keep = keep[order]
+    order = keep[order]
+    selected = []
+    while order.numel() > 0:
+        current = order[0]
+        selected.append(current)
+        remaining = order[1:]
+        ious = box_iou_one_to_many(boxes[current], boxes[remaining])
+        different_class = labels[remaining] != labels[current]
+        duplicates = different_class & (ious > CROSS_CLASS_NMS_IOU_THRESHOLD)
+        order = remaining[~duplicates]
 
-    return keep[:max_detections]
+    # 先完成去重再限制数量，避免重复候选占掉其他目标的名额。
+    return torch.stack(selected)[:max_detections]
 
 
 def clip_candidates_to_image(candidates, image_size):
@@ -145,7 +159,7 @@ def postprocess_single_image(
         resized_size,
         original_size,
         score_threshold=0.3,
-        iou_threshold=0.5,
+        iou_threshold=DEFAULT_NMS_IOU_THRESHOLD,
         max_candidates=1000,
         max_detections=100,
 ):

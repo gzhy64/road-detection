@@ -148,7 +148,7 @@ python3 evaluate.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001_aug/best.pth -
 - **精确率、召回率、F1、TP/FP/FN**：默认在预测得分 ≥ 0.3 时统计。总体 P/R 对各类别计数求和后计算。
 - AP 的候选得分阈值默认 0.05，P/R 得分阈值默认 0.3，可用 `--score-threshold`、`--report-threshold` 调整。候选数量上限和阈值会影响结果，报告中保存完整评估配置。
 - 原图坐标采用连续 `xyxy`，面积不加 1；因此不是 VOC 官方整数坐标评估器的逐位复现。
-- 按类别 NMS 的 IoU 阈值默认 0.5，每图 NMS 前最多 1000 个候选，最终最多 100 个检测框。不同类别不相互抑制；每张图允许检测多个目标。
+- 先进行类内 NMS，IoU 阈值默认 0.4；再对不同类别、IoU > 0.8 的高度重叠框保留高分项。每图 NMS 前最多 1000 个候选，去重后最终最多 100 个检测框；不同位置的目标可同时保留。预测和评估使用同一后处理规则，具体阈值写入输出 JSON。
 
 实验目录包含 `config.json`、`split.json`、`history.json/csv`、逐次评估 JSON，以及 `best.pth/latest.pth`。损失日志是批次平均值，并非将整轮所有正样本统一归一化后重新计算的损失。
 
