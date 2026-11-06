@@ -114,4 +114,4 @@ P/R 使用固定得分阈值，AP 使用低阈值候选的排序，两个指标�
 
 `history.json/csv` 中的 `lr` 记录该轮实际使用的学习率。`save_model()` 保存模型参数、类别定义、当前轮次、训练配置和数据划分，供预测和评估使用；训练配置记录 `scheduler="exponential"`、`lr`、`min_lr`、`lr_decay`。
 
-训练入口每轮记录损失，在配置的轮次评估检测指标。`latest.pth` 保存最新一轮模型权重；`best.pth` 保存评估过的模型中 mAP50 最高者，同分时比较验证损失。`write_history()` 保存 JSON 和 CSV；`plot_history.py` 读取记录绘图。
+训练入口每轮记录损失，在配置的轮次评估检测指标。`latest.pth` 保存最新一轮模型权重；`best.pth` 保存评估过的模型中 mAP50 最高者，同分时比较验证损失。`write_history()` 保存 JSON 和 CSV；`plot_history.py` 读取 `--history` 指定的记录，默认在记录所在目录生成 `training_curves.png`，也可用 `--output` 另存。

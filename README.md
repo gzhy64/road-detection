@@ -96,8 +96,10 @@ python3 evaluate.py --checkpoint outputs/runs/fcos/best.pth --split val --output
 查看训练和验证曲线：
 
 ```bash
-python3 plot_history.py --history outputs/runs/fcos/history.json --output outputs/runs/fcos/training_curves.png
+python3 plot_history.py --history outputs/runs/fcos/history.json
 ```
+
+默认将图片保存为历史文件所在目录下的 `training_curves.png`。切换实验时只需修改 `--history`；需要另存到其他位置时，可显式指定 `--output`。
 
 根据验证集结果选择模型和推理阈值；如果调整了设置并重新训练，重复本步骤进行比较。
 
