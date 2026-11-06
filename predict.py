@@ -141,8 +141,8 @@ def main():
     annotations.add_argument("--annotation", type=Path, help="单图模式的 XML，在预览中叠加绿色真实框")
     annotations.add_argument("--annotation-dir", type=Path, help="按图片名匹配同名 XML 的标注文件夹")
     outputs = parser.add_mutually_exclusive_group()
-    outputs.add_argument("--output", type=Path, help="单图模式的预览文件路径")
-    outputs.add_argument("--output-dir", type=Path, help="预览和检测 JSON 的保存文件夹")
+    outputs.add_argument("--output", type=Path, help="单图模式的另存路径，默认根据输入图片名生成")
+    outputs.add_argument("--output-dir", type=Path, help="另存文件夹，默认将预览和检测 JSON 保存到权重所在目录")
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--limit", type=int, help="最多处理前 N 张图片，不指定则处理全部")
     parser.add_argument("--device", default="auto")
@@ -161,17 +161,19 @@ def main():
     except ValueError as error:
         parser.error(str(error))
     if len(image_paths) > 1 and (args.output or args.annotation):
-        parser.error("处理多张图片时，请使用 --output-dir 和可选的 --annotation-dir。")
+        parser.error("多图模式请省略 --output；标注使用 --annotation-dir，需要另存时用 --output-dir。")
     if args.annotation_dir and not args.annotation_dir.is_dir():
         parser.error(f"标注文件夹不存在：{args.annotation_dir}")
 
-    directory_mode = args.image_dir is not None or len(image_paths) > 1
-    output_dir = args.output_dir or PROJECT_DIR / "outputs" / ("predictions" if directory_mode else "")
-    output_paths = [args.output or output_dir / f"{image.stem}_pred.png" for image in image_paths]
+    output_dir = args.output_dir or args.checkpoint.parent
     annotation_paths = [
         args.annotation_dir / f"{image.stem}.xml" if args.annotation_dir else args.annotation
         for image in image_paths
     ]
+    output_paths = []
+    for image, annotation in zip(image_paths, annotation_paths):
+        suffix = "compare" if annotation is not None else "pred"
+        output_paths.append(args.output or output_dir / f"{image.stem}_{suffix}.png")
     if len({path.resolve() for path in output_paths}) != len(output_paths):
         parser.error("输入图片存在同名文件，会覆盖输出，请分目录运行或修改图片名。")
     for output in output_paths:

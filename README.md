@@ -114,18 +114,20 @@ python3 plot_history.py --history outputs/runs/fcos_e50_b4_lr0.001/history.json
 绘制一张验证集图片：
 
 ```bash
-python3 predict.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001/best.pth --image archive/images/road261.png --annotation archive/annotations/road261.xml --output outputs/validation_predictions/road261_compare.png
+python3 predict.py --checkpoint outputs/runs/fcos100-n-aug/best.pth --image archive/images/road261.png --annotation archive/annotations/road261.xml
 ```
 
 一次绘制多张验证集图片：
 
 ```bash
-python3 predict.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001/best.pth --image archive/images/road261.png archive/images/road141.png archive/images/road415.png --annotation-dir archive/annotations --output-dir outputs/validation_predictions --batch-size 2
+python3 predict.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001/best.pth --image archive/images/road261.png archive/images/road141.png archive/images/road415.png --annotation-dir archive/annotations --batch-size 2
 ```
+
+默认将预览和 JSON 保存到 `--checkpoint` 所在目录。带标注时按输入图片名生成 `图片名_compare.png` 和 `图片名_compare.json`；只画预测时生成 `图片名_pred.png` 和 `图片名_pred.json`。例如单图命令会保存到 `outputs/runs/fcos100-n-aug/road261_compare.png` 及同名 JSON。
 
 预览中预测框为红色、真实框为绿色；每张图旁的同名 JSON 保存完整浮点边框、类别和得分。XML 只在预测完成后用于绘制绿色真实框。省略 `--annotation` 或 `--annotation-dir` 即只画预测框。
 
-模型只加载一次，按 `--batch-size` 分批处理。多图输出使用 `--output-dir`；指定标注文件夹时，每张图片需要有同名 XML。绘图用于观察误检、漏检和定位偏差，完整验证集指标用于比较模型。
+模型只加载一次，按 `--batch-size` 分批处理。多图和文件夹模式也默认使用权重所在目录；需要另存时，单图可用 `--output` 指定文件，多图或单图均可用 `--output-dir` 指定文件夹。指定标注文件夹时，每张图片需要有同名 XML。绘图用于观察误检、漏检和定位偏差，完整验证集指标用于比较模型。
 
 文件夹绘图也支持 `--image-dir`、`--limit` 和 `--batch-size`。该模式只按文件名收集图片，不会自动按数据子集筛选；如果需要验证集展示，应指向单独整理的验证集图片目录。直接读取 `archive/images` 会包含训练、验证和测试图片，不能将整组预览称为验证集或测试集结果。
 

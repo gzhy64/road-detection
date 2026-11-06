@@ -94,6 +94,8 @@ y = (row + 0.5) × stride
 
 批量预测入口先用 `collect_image_paths()` 收集显式指定的图片，或文件夹中的图片，再按 `--batch-size` 分组。`prepare_prediction_image()` 对每张图片完成相同的缩放、补边和尺寸记录，堆成图片批次后传给 `predict_batch()`。每张图独立使用自己的原图尺寸还原坐标，分别保存预览和 JSON；模型权重只加载一次。可选的 `--annotation-dir` 按图片名寻找 XML，仅用于叠加真实框。
 
+未指定 `--output` 或 `--output-dir` 时，预览默认保存到 `--checkpoint` 所在目录。输入图片带标注时使用 `图片名_compare.png`，不带标注时使用 `图片名_pred.png`；JSON 与预览同名。单图、多图和文件夹模式采用相同规则；显式指定保存位置仍可另存。
+
 ## 如何判断检测效果
 
 `evaluate_model()` 读取指定子集图片，复用 `predict_batch()`，再直接读取 XML 的原始坐标。每张图片、每个类别调用 `match_detections_for_class()`，按预测得分从高到低匹配。
