@@ -10,7 +10,27 @@ from dataset import CLASS_TO_ID, split_dataset
 
 
 PROJECT_DIR = Path(__file__).resolve().parent
-DEFAULT_RUN_DIR = PROJECT_DIR / "outputs" / "runs" / "fcos"
+RUNS_DIR = PROJECT_DIR / "outputs" / "runs"
+DEFAULT_RUN_DIR = RUNS_DIR / "fcos"
+
+
+def create_run_directory(epochs, batch_size, lr, augment=False, runs_dir=None):
+    """按关键参数创建实验目录，重名时增加序号，保留已有目录中的结果。"""
+    root = Path(runs_dir) if runs_dir is not None else RUNS_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    name = f"fcos_e{epochs}_b{batch_size}_lr{lr:g}"
+    if augment:
+        name += "_aug"
+    number = 1
+    while True:
+        directory = root / (name if number == 1 else f"{name}_{number}")
+        try:
+            # 用实际创建操作占用目录名，两个同时启动的实验也不会共用目录。
+            directory.mkdir()
+        except FileExistsError:
+            number += 1
+        else:
+            return directory
 
 
 def select_device(name="auto"):

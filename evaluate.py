@@ -196,7 +196,7 @@ def main():
     parser.add_argument("--score-threshold", type=float, default=0.05)
     parser.add_argument("--report-threshold", type=float, default=0.3)
     parser.add_argument("--nms-iou-threshold", type=float, default=0.5)
-    parser.add_argument("--output", type=Path)
+    parser.add_argument("--output", type=Path, help="另存路径，默认在权重目录保存 val_metrics.json 或 test_metrics.json")
     args = parser.parse_args()
     device = select_device(args.device)
     model, checkpoint = load_model(args.checkpoint, device)
@@ -221,7 +221,7 @@ def main():
     )
     metrics.update({"split": split_name, "epoch": checkpoint["epoch"],
                     "checkpoint": str(args.checkpoint), "split_seed": checkpoint["split_seed"]})
-    output = args.output or PROJECT_DIR / "outputs/evaluation" / f"{split_name}.json"
+    output = args.output or args.checkpoint.parent / f"{split_name}_metrics.json"
     save_json(metrics, output)
     print_metrics(metrics)
     print("评估结果已保存：", output)

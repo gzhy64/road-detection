@@ -4,7 +4,7 @@
 
 这是 **FCOS 思路的教学变体**：使用自定义 TinyBackbone，保留五级特征金字塔、逐位置 ltrb 回归、中心度和 Focal Loss。它并非原论文 ResNet-50 模型的严格复现，也不承诺论文中的精度。
 
-首次运行的顺序是：**准备环境和数据 → 从头训练 → 验证集评估与可视化 → 最终测试集评估**。初始没有 `.pth` 权重文件时，直接训练即可；后续命令统一使用训练生成的 `outputs/runs/fcos/best.pth`。
+首次运行的顺序是：**准备环境和数据 → 从头训练 → 验证集评估与可视化 → 最终测试集评估**。初始没有 `.pth` 权重文件时，直接训练即可；下面以自动生成的 `outputs/runs/fcos_e50_b4_lr0.001/` 为例。
 
 ## 1. 准备环境和数据
 
@@ -40,8 +40,12 @@ road-detection/
 ## 2. 从头训练，生成模型权重
 
 ```bash
-python3 train.py --epochs 50 --batch-size 4 --seed 2026 --output-dir outputs/runs/fcos
+python3 train.py --epochs 50 --batch-size 4 --seed 2026
 ```
+
+默认根据轮数、批次大小和初始学习率在 `outputs/runs/` 下创建目录。上面的命令生成 `fcos_e50_b4_lr0.001/`；开启 `--augment` 时追加 `_aug`。名字只包含少量关键参数，完整配置保存在 `config.json` 中。
+
+同名目录已存在时，会自动创建 `_2`、`_3` 等新目录，不覆盖原结果。训练启动时打印实际目录，并在 `config.json` 中保存 `output_dir`；后续评估和绘图使用这次实际生成的路径。
 
 每次运行都会创建随机初始化的模型，从第 1 轮开始训练。默认 SGD：初始学习率 0.001、momentum 0.9、weight decay 0.0001、梯度范数上限 10。
 
@@ -52,24 +56,24 @@ python3 train.py --epochs 50 --batch-size 4 --seed 2026 --output-dir outputs/run
 例如，训练 100 轮，从 `0.001` 开始逐轮乘 `0.95`：
 
 ```bash
-python3 train.py --epochs 100 --batch-size 4 --seed 2026 --lr 0.001 --lr-decay 0.95 --min-lr 1e-6 --output-dir outputs/runs/fcos100_exp095
+python3 train.py --epochs 100 --batch-size 4 --seed 2026 --lr 0.001 --lr-decay 0.95 --min-lr 1e-6
 ```
 
-该设置下，第 50 轮约为 `8.10e-5`，第 100 轮约为 `6.23e-6`，均高于下限。该命令的模型权重、评估和绘图路径应使用 `outputs/runs/fcos100_exp095/`。初始值、下限、每轮乘数及调度方式会写入 `config.json` 和模型权重中的 `run_config`；`history.json/csv` 中的 `lr` 是每轮实际用于参数更新的值。是否优于既有实验，以相同数据划分下的验证集指标判断。
+该设置下，第 50 轮约为 `8.10e-5`，第 100 轮约为 `6.23e-6`，均高于下限。该命令默认生成 `outputs/runs/fcos_e100_b4_lr0.001/`，同名时带序号。初始值、下限、每轮乘数及调度方式会写入 `config.json` 和模型权重中的 `run_config`；`history.json/csv` 中的 `lr` 是每轮实际用于参数更新的值。是否优于既有实验，以相同数据划分下的验证集指标判断。
 
 下一轮训练增强对照仅增加 `--augment`，输入仍为 416，学习率及其他训练参数与 `fcos100-n` 保持一致：
 
 ```bash
-python3 train.py --epochs 100 --batch-size 4 --seed 2026 --lr 0.001 --lr-decay 0.95 --min-lr 1e-6 --augment --output-dir outputs/runs/fcos100-n-aug
+python3 train.py --epochs 100 --batch-size 4 --seed 2026 --lr 0.001 --lr-decay 0.95 --min-lr 1e-6 --augment
 ```
 
 增强默认关闭，以便复现无增强的训练。开启后，每张训练图片以 50% 概率调整亮度和对比度（因子均为 0.8～1.2），并独立以 50% 概率进行中心缩放（0.9～1.1 倍）和平移（不超过原图宽、高的 5%）。几何变换同步更新边框，并限定所有标注目标完整留在画面内；最多尝试 10 次，仍不可行时跳过几何变换。类别和目标数量不变。
 
-增强在原图尺寸下进行，随后仍按原流程缩放、补边到 `[3,416,416]`。训练入口为增强创建独立数据集实例；验证损失、验证检测指标、最终测试和预测均使用固定预处理。增强参数写入 `config.json` 及权重中的 `run_config.augmentation`。该实验的后续权重和历史路径使用 `outputs/runs/fcos100-n-aug/`，以最佳验证 mAP50 与 `fcos100-n` 的 63.51% 比较。
+增强在原图尺寸下进行，随后仍按原流程缩放、补边到 `[3,416,416]`。训练入口为增强创建独立数据集实例；验证损失、验证检测指标、最终测试和预测均使用固定预处理。增强参数写入 `config.json` 及权重中的 `run_config.augmentation`。该命令默认生成 `outputs/runs/fcos_e100_b4_lr0.001_aug/`，同名时带序号，以最佳验证 mAP50 与 `fcos100-n` 的 63.51% 比较。
 
 训练过程中，每轮计算训练和验证损失，在第 1 轮、每 5 轮及最后一轮计算验证集检测指标，用来选择最佳权重。可用 `--eval-interval 1` 每轮评估；`--patience 15` 可启用评估无改善后的早停，默认禁用。测试集不参与这一过程。
 
-结果写入 `outputs/runs/fcos/`：
+首个 50 轮示例的结果写入 `outputs/runs/fcos_e50_b4_lr0.001/`：
 
 | 文件 | 用途 |
 |---|---|
@@ -79,7 +83,7 @@ python3 train.py --epochs 100 --batch-size 4 --seed 2026 --lr 0.001 --lr-decay 0
 | `history.json`、`history.csv` | 训练损失、验证损失及检测指标记录 |
 | `evaluation_epoch_*.json` | 各次验证集检测评估结果 |
 
-权重文件供预测和评估使用。输出目录已有训练结果时，请通过 `--output-dir` 指定新目录，例如 `outputs/runs/fcos_new`；下面各命令中的权重和历史路径也应相应替换。
+权重文件供预测和评估使用。需要自己命名时，仍可用 `--output-dir` 指定目录；显式指定的目录已有模型权重或 `config.json` 时会报错，避免覆盖训练结果。下面各命令中的权重和历史路径应替换为本次实际实验目录。
 
 ## 3. 验证集评估与预测可视化
 
@@ -88,15 +92,15 @@ python3 train.py --epochs 100 --batch-size 4 --seed 2026 --lr 0.001 --lr-decay 0
 训练完成、生成 `best.pth` 后，执行：
 
 ```bash
-python3 evaluate.py --checkpoint outputs/runs/fcos/best.pth --split val --output outputs/runs/fcos/val_metrics.json
+python3 evaluate.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001/best.pth --split val
 ```
 
-该命令对权重对应划分中的 87 张验证图片进行评估，打印四个类别的 AP50、精确率、召回率、TP/FP/FN，并保存 JSON。训练过程中已进行的验证用于选择权重，这里单独汇总所选最佳模型的结果。
+该命令对权重对应划分中的 87 张验证图片进行评估，打印四个类别的 AP50、精确率、召回率、TP/FP/FN，默认在权重所在目录保存 `val_metrics.json`。`--split test` 对应 `test_metrics.json`；单图检查对应 `single_图片名_metrics.json`。需要另存时仍可使用 `--output`。训练过程中已进行的验证用于选择权重，这里单独汇总所选最佳模型的结果。
 
 查看训练和验证曲线：
 
 ```bash
-python3 plot_history.py --history outputs/runs/fcos/history.json
+python3 plot_history.py --history outputs/runs/fcos_e50_b4_lr0.001/history.json
 ```
 
 默认将图片保存为历史文件所在目录下的 `training_curves.png`。切换实验时只需修改 `--history`；需要另存到其他位置时，可显式指定 `--output`。
@@ -110,13 +114,13 @@ python3 plot_history.py --history outputs/runs/fcos/history.json
 绘制一张验证集图片：
 
 ```bash
-python3 predict.py --checkpoint outputs/runs/fcos/best.pth --image archive/images/road261.png --annotation archive/annotations/road261.xml --output outputs/validation_predictions/road261_compare.png
+python3 predict.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001/best.pth --image archive/images/road261.png --annotation archive/annotations/road261.xml --output outputs/validation_predictions/road261_compare.png
 ```
 
 一次绘制多张验证集图片：
 
 ```bash
-python3 predict.py --checkpoint outputs/runs/fcos/best.pth --image archive/images/road261.png archive/images/road141.png archive/images/road415.png --annotation-dir archive/annotations --output-dir outputs/validation_predictions --batch-size 2
+python3 predict.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001/best.pth --image archive/images/road261.png archive/images/road141.png archive/images/road415.png --annotation-dir archive/annotations --output-dir outputs/validation_predictions --batch-size 2
 ```
 
 预览中预测框为红色、真实框为绿色；每张图旁的同名 JSON 保存完整浮点边框、类别和得分。XML 只在预测完成后用于绘制绿色真实框。省略 `--annotation` 或 `--annotation-dir` 即只画预测框。
@@ -130,10 +134,10 @@ python3 predict.py --checkpoint outputs/runs/fcos/best.pth --image archive/image
 在训练配置、最佳权重和推理阈值确定后，最后评估测试集：
 
 ```bash
-python3 evaluate.py --checkpoint outputs/runs/fcos/best.pth --split test --output outputs/runs/fcos/test_metrics.json
+python3 evaluate.py --checkpoint outputs/runs/fcos_e50_b4_lr0.001/best.pth --split test
 ```
 
-该命令只使用权重对应划分中的 89 张测试图片。最终报告使用测试集指标，并注明模型权重和推理参数；训练集示例、验证集成绩和测试集成绩分别标注。
+该命令只使用权重对应划分中的 89 张测试图片，默认将结果保存到权重所在目录的 `test_metrics.json`。最终报告使用测试集指标，并注明模型权重和推理参数；训练集示例、验证集成绩和测试集成绩分别标注。
 
 如果验证阶段调整了 `--score-threshold`、`--report-threshold` 或 `--nms-iou-threshold`，最终测试时使用同样的值。测试集用于最终评价，参数选择以验证集为依据。
 

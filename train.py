@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, Subset
 from augmentations import TrainAugmentation
 from dataset import CLASS_TO_ID, RoadSignDataset, detection_collate_fn
 from evaluate import evaluate_model, print_metrics
-from experiment import DEFAULT_RUN_DIR, PROJECT_DIR, prepare_splits, save_json, select_device
+from experiment import PROJECT_DIR, create_run_directory, prepare_splits, save_json, select_device
 from locations import make_locations
 from losses import compute_losses
 from model import FCOS
@@ -113,7 +113,7 @@ def write_history(history, directory):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data-dir", type=Path, default=PROJECT_DIR / "archive")
-    parser.add_argument("--output-dir", type=Path, default=DEFAULT_RUN_DIR)
+    parser.add_argument("--output-dir", type=Path, help="自定义保存目录，默认按轮数、批次和初始学习率自动命名")
     parser.add_argument("--epochs", type=int, default=50, help="本次从头训练的轮数")
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--seed", type=int)
@@ -143,8 +143,9 @@ def main():
         parser.error("最低学习率须为有限正数，且不能大于初始学习率。")
     if not 0 < config["lr_decay"] < 1:
         parser.error("学习率每轮衰减乘数须大于 0 且小于 1。")
-    latest_path = args.output_dir / "latest.pth"
-    if any((args.output_dir / name).exists() for name in ("latest.pth", "best.pth", "config.json")):
+    if args.output_dir is not None and any(
+        (args.output_dir / name).exists() for name in ("latest.pth", "best.pth", "config.json")
+    ):
         parser.error("输出目录已有训练结果，请通过 --output-dir 指定新的实验目录。")
     device = select_device(args.device)
     torch.manual_seed(config["seed"])
@@ -169,10 +170,17 @@ def main():
     model = FCOS(num_classes=len(CLASS_TO_ID)).to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=config["lr"],
                                 momentum=config["momentum"], weight_decay=config["weight_decay"])
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    if args.output_dir is None:
+        args.output_dir = create_run_directory(
+            args.epochs, config["batch_size"], config["lr"], args.augment,
+        )
+    else:
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+    latest_path = args.output_dir / "latest.pth"
     config.update(scheduler="exponential", epochs=args.epochs,
                   eval_interval=args.eval_interval, patience=args.patience,
-                  device=str(device), num_workers=args.num_workers, data_dir=str(args.data_dir))
+                  device=str(device), num_workers=args.num_workers, data_dir=str(args.data_dir),
+                  output_dir=str(args.output_dir.resolve()))
     config["augmentation"] = augmentation.to_config() if augmentation else {"enabled": False}
     save_json(config, args.output_dir / "config.json")
     save_json(dataset_metadata, args.output_dir / "split.json")

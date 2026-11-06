@@ -108,6 +108,10 @@ P/R 使用固定得分阈值，AP 使用低阈值候选的排序，两个指标�
 
 `experiment.prepare_splits()` 固定数据成员并计算 XML 指纹；`load_checkpoint()` 检查权重文件中的类别映射，`load_model()` 加载网络供预测和评估，`save_json()` 保存结果。
 
+训练未指定 `--output-dir` 时，`create_run_directory()` 根据轮数、批次和初始学习率创建目录，如 `outputs/runs/fcos_e50_b4_lr0.001/`；启用增强时追加 `_aug`。同名目录已存在时追加 `_2`、`_3`，通过实际创建目录占用名字，避免重复或并发运行共用输出目录。完整配置和实际 `output_dir` 写入 `config.json`。显式指定 `--output-dir` 时沿用用户路径，并检查其中是否已有训练结果。
+
+评估未指定 `--output` 时，在 `--checkpoint` 所在目录保存 `val_metrics.json` 或 `test_metrics.json`；单图检查保存 `single_图片名_metrics.json`。显式 `--output` 可覆盖该默认保存位置。
+
 训练入口每次创建新的模型和优化器，从第 1 轮开始训练。学习率使用带下限的指数衰减：`--lr` 是初始值，`--min-lr` 是下限，默认分别为 `1e-3` 和 `1e-6`；`--lr-decay` 是每轮乘数，默认 `0.95`。最低值仅作下限，训练结束时不要求达到它。
 
 每轮参数更新完成后，为下一轮设置 `param_group["lr"] = max(min_lr, param_group["lr"] * lr_decay)`。第 e 轮使用的学习率为 `max(min_lr, initial_lr × lr_decay**(e-1))`；总训练轮数不参与该公式。触及下限后保持该值，不会回升。默认设置下，第 50 轮约为 `8.10e-5`，第 100 轮约为 `6.23e-6`；只训练一轮时使用初始值。
